@@ -1,0 +1,1137 @@
+#+TITLE: Beams
+# bash scripts for interacting with the metadir projects
+
+* spec
+** metadir
+# metadir is a set of csv files
+# that functions as a plain-text relational database
+# metadir/pairs holds csv files value1-value2.csv
+# with content value1_uuid,value2_uuid
+# metadir/props holds csv files value/index.csv
+# with content value_uuid,value
+* tasks
+ - add unit tests
+* scripts
+** puma
+#+begin_src sh :tangle scripts/puma :tangle-mode (identity #o755)
+#!/bin/bash
+
+# "a tree cat that executes"
+# suggested by @that-other-guy
+# at https://stackoverflow.com/questions/70841809/what-should-this-bash-script-be-called
+
+unset concatenate
+OPTIND=1
+
+while getopts 'c' opt; do
+  case $opt in
+    c) concatenate=1 ;;
+    ,*) printf "%s\n" "OPTIONS: -c Concatenate files in INPUTPATH before piping to 'eval COMMAND'" >&2
+       exit 1
+  esac
+done
+shift "$(( OPTIND - 1 ))"
+
+if [ $# -ne 4 ]; then
+  printf 1>&2 "%s\n" "Usage: $0 [-c] INPUTPATH COMMAND OUTPUTDIR OUTPUTNAME
+
+  Pipes files in INPUTPATH to 'eval COMMAND'
+  writes output to OUTPUTDIR/files/DATE-OUTPUTNAME
+  creates symbolic link at OUTPUTDIR/links/OUTPUTNAME
+
+  OPTIONS:
+    -c Concatenate files in INPUTPATH before piping to 'eval COMMAND'
+
+  EXAMPLE:
+    $0 \"assets/2001\" \"scripts/cache\" \"../ops/cache\" \"2001\""
+  exit 3
+fi
+
+inputpath="$1"
+cmd="$2"
+outputdir="$3"
+outputname="$4"
+
+filedir="$outputdir/files"
+linkdir="$outputdir/links"
+
+mkdir -p "$filedir" "$linkdir"
+
+starttime=$(date +%Y%m%d-%H%M%S)
+outputfile="$filedir/$starttime-$outputname"
+outputlink="$linkdir/$outputname"
+
+# sort input files to puma in predictable order
+
+# do not follow symlinks here to avoid file system loops
+# do not follow symlinks provided on the command-line as such arguments are hard to build
+# to resolve symlinks to asset folders add a trailing backslash to INPUTPATH
+
+# default `find` output is necessary for broad compatibility
+# further filtering should happen inside the COMMAND script
+# "concat only one argument" forbids -mindepth 1
+# "list only folder contents" requires -mindepth 1 to avoid recursion in ./
+# "concat all folder contents" requires -mindepth 1 to avoid catting ./
+if [[ "$concatenate" -gt 0 ]]; then
+  input=$(find "$inputpath" ! -name ".DS_Store" | sort | xargs cat)
+else
+  input=$(find "$inputpath" ! -name ".DS_Store" | sort)
+fi
+
+amount=$(wc -l <<< "$input");
+printf 1>&2 "| %s | %s | %s | %s\n" "$inputpath" "$outputdir" "$outputname" "$amount";
+
+eval "$cmd" <<< "$input" > "$outputfile"
+
+rm -f "$outputlink"
+ln -s "$(realpath "$outputfile")" "$outputlink"
+#+end_src
+** lookup
+#+begin_src sh :tangle scripts/lookup :tangle-mode (identity #o755)
+#!/bin/bash
+
+if [ $# -ne 2 ]; then
+  printf 1>&2 "%s\n" "Usage: $0 FILENAME UUID
+
+  Finds a value corresponding to UUID in FILENAME
+
+  EXAMPLE:
+    $0 metadir/filepath/index.csv 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704"
+  exit 3
+fi
+
+filename="$1"
+uuid="$2"
+
+# printf 1>&2 "lookup: %s, %s\n" "$filename" "$uuid"
+cat "$filename" | sort | uniq | grep -o "^$uuid,.*" | sed "s/^$uuid,//" | head -n 1
+#+end_src
+** unescape-json.awk
+#+begin_src awk :tangle scripts/unescape-json.awk
+
+# unescape-json.awk
+#
+# unescapes some characters when converting from json
+
+function unescape_json(str) {
+    gsub(/^"/, "", str)
+    gsub(/"$/, "", str)
+    gsub(/\\"/, "\"",  str)
+    gsub(/\\b/, "\b",  str)
+    gsub(/\\f/, "\f",  str)
+    gsub(/\\n/, "\n",  str)
+    gsub(/\\r/, "\r",  str)
+    gsub(/\\t/, "\t",  str)
+    gsub(/\\\\/, "\\", str)
+
+    return str
+}
+{
+    printf "%s", unescape_json($0)
+}
+#+end_src
+** build-biorg
+#+begin_src sh :tangle scripts/build-biorg :tangle-mode (identity #o755)
+#!/bin/bash
+
+# list of datum_uuid,datum | build-biorg | biorg compilation
+
+if [ $# -ne 0 ] || [[ -t 0 ]]; then
+  printf 1>&2 "%s\n" "Usage: $0
+
+  Reads a stream of datum_uuid,datum pairs from stdin
+  outputs biorg
+
+  EXAMPLE:
+    cat metadir/props/datum/index.csv | $0 > ../ops/index.bi.org"
+  exit 3
+fi
+
+build_biorg () {
+    line="$1"
+    counter="$2"
+
+    datum_uuid=$(printf "%s" "$line" | cut -c 1-64)
+    datum_escaped=$(printf "%s" "$line" | cut -c 66-)
+    datum=$(printf "%s" "$datum_escaped" | awk -f scripts/unescape-json.awk)
+
+    filepath_uuid=$(bash scripts/lookup "metadir/pairs/datum-filepath.csv" "$datum_uuid")
+    filepath_escaped=$(bash scripts/lookup "metadir/props/filepath/index.csv" "$filepath_uuid")
+    filepath=$(printf "%s" "$filepath_escaped" | awk -f scripts/unescape-json.awk)
+
+    filesize_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filesize.csv" "$filepath_uuid")
+    filesize=$(bash scripts/lookup "metadir/props/filesize/index.csv" "$filesize_uuid")
+
+    filetype_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filetype.csv" "$filepath_uuid")
+    filetype_escaped=$(bash scripts/lookup "metadir/props/filetype/index.csv" "$filetype_uuid")
+    filetype=$(printf "%s" "$filetype_escaped" | awk -f scripts/unescape-json.awk)
+
+    moddate_uuid=$(bash scripts/lookup "metadir/pairs/filepath-moddate.csv" "$filepath_uuid")
+    moddate=$(bash scripts/lookup "metadir/props/date/index.csv" "$moddate_uuid")
+
+    filehash=$(bash scripts/lookup "metadir/pairs/filepath-filehash.csv" "$filepath_uuid")
+
+    printf "* .\n"
+    printf ":PROPERTIES:\n"
+    printf ":UUID: %s\n" "$datum_uuid"
+    printf ":FILE_PATH: %s\n" "$filepath"
+    printf ":FILE_SIZE: %s\n" "$filesize"
+    printf ":FILE_TYPE: %s\n" "$filetype"
+    printf ":FILE_HASH: %s\n" "$filehash"
+    printf ":MOD_DATE: <%s>\n" "$moddate"
+    printf ":END:\n"
+    printf "%s\n" "$datum"
+    printf 1>&2 "                build: %-6s parts\r" "$counter"
+}
+
+export -f build_biorg
+
+temp=$(mktemp)
+cat <&0 > "$temp"
+
+parallel -a "$temp" -j 4 build_biorg {} "{#}"
+printf 1>&2 "\n"
+#+end_src
+
+** build-json
+#+begin_src sh :tangle scripts/build-json :tangle-mode (identity #o755)
+#!/bin/bash
+
+# filepath_uuid,filepath | enrich prop | json with prop
+
+if [ $# -ne 0 ] || [[ -t 0 ]]; then
+  printf 1>&2 "%s\n" "Usage: $0
+
+  Reads a stream of filepath-uuid pairs from stdin
+  outputs event cache with RULENAME
+
+  EXAMPLE:
+    cat metadir/props/filepath/index.csv | $0 > index.json"
+  exit 3
+fi
+
+build_json () {
+    line="$1"
+    counter="$2"
+
+    # TODO: read datum_uuid instead
+    datum_uuid=$(printf "%s" "$line" | cut -c 1-64)
+    datum_escaped=$(printf "%s" "$line" | cut -c 66-)
+    datum=$(printf "%s" "$datum_escaped" | jq -r)
+
+    filepath_uuid=$(bash scripts/lookup "metadir/pairs/datum-filepath.csv" "$datum_uuid")
+    filepath_escaped=$(bash scripts/lookup "metadir/props/filepath/index.csv" "$filepath_uuid")
+    filepath=$(printf "%s" "$filepath_escaped" | jq -r)
+
+    # filesize_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filesize.csv" "$filepath_uuid")
+    # filesize=$(bash scripts/lookup "metadir/props/filesize/index.csv" "$filesize_uuid")
+
+    # filetype_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filetype.csv" "$filepath_uuid")
+    # filetype_escaped=$(bash scripts/lookup "metadir/props/filetype/index.csv" "$filetype_uuid")
+    # filetype=$(printf "%s" "$filetype_escaped" | jq -r)
+
+    # moddate_uuid=$(bash scripts/lookup "metadir/pairs/filepath-moddate.csv" "$filepath_uuid")
+    # moddate=$(bash scripts/lookup "metadir/props/date/index.csv" "$moddate_uuid")
+
+    guestname_uuid=$(bash scripts/lookup "metadir/pairs/datum-guestname.csv" "$datum_uuid")
+    guestname=$(bash scripts/lookup "metadir/props/name/index.csv" "$guestname_uuid")
+
+    guestdate_uuid=$(bash scripts/lookup "metadir/pairs/datum-guestdate.csv" "$datum_uuid")
+    guestdate=$(bash scripts/lookup "metadir/props/date/index.csv" "$guestdate_uuid")
+
+    hostname_uuid=$(bash scripts/lookup "metadir/pairs/datum-hostname.csv" "$datum_uuid")
+    hostname=$(bash scripts/lookup "metadir/props/name/index.csv" "$hostname_uuid")
+
+    hostdate_uuid=$(bash scripts/lookup "metadir/pairs/datum-hostdate.csv" "$datum_uuid")
+    hostdate=$(bash scripts/lookup "metadir/props/date/index.csv" "$hostdate_uuid")
+
+    event=$(jq -c --arg UUID "$datum_uuid" \
+                  --arg FILE_PATH "$filepath" \
+                  --arg GUEST_NAME "$guestname" \
+                  --arg GUEST_DATE "$gustdate" \
+                  --arg HOST_NAME "$hostname" \
+                  --arg HOST_DATE "$hostdate" \
+                  --arg DATUM "$datum" \
+                  '{$UUID,$FILE_PATH,$GUEST_NAME,$GUEST_DATE,$HOST_NAME,$HOST_DATE,$DATUM}' <(printf "[]"))
+    printf "%s\n" "$event"
+    printf 1>&2 "                build: %-6s parts\r" "$counter"
+}
+
+export -f build_json
+
+temp=$(mktemp)
+cat <&0 > "$temp"
+
+parallel -a "$temp" build_json {} "{#}"
+printf 1>&2 "\n"
+#+end_src
+** build-json-curves
+#+begin_src sh :tangle scripts/build-json-curves :tangle-mode (identity #o755)
+#!/bin/bash
+
+# filepath_uuid,filepath | enrich prop | json with prop
+
+if [ $# -ne 0 ] || [[ -t 0 ]]; then
+  printf 1>&2 "%s\n" "Usage: $0
+
+  Reads a stream of filepath-uuid pairs from stdin
+  outputs event cache with RULENAME
+
+  EXAMPLE:
+    cat metadir/props/filepath/index.csv | $0 > index.json"
+  exit 3
+fi
+
+build_json () {
+    line="$1"
+    counter="$2"
+
+    datum_uuid=$(printf "%s" "$line" | cut -c 1-64)
+    datum_escaped=$(printf "%s" "$line" | cut -c 66-)
+    datum=$(printf "%s" "$datum_escaped" | jq -r)
+
+    filepath_uuid=$(bash scripts/lookup "metadir/pairs/datum-filepath.csv" "$datum_uuid")
+    filepath_escaped=$(bash scripts/lookup "metadir/props/filepath/index.csv" "$filepath_uuid")
+    filepath=$(printf "%s" "$filepath_escaped" | jq -r)
+
+    # filesize_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filesize.csv" "$filepath_uuid")
+    # filesize=$(bash scripts/lookup "metadir/props/filesize/index.csv" "$filesize_uuid")
+
+    # filetype_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filetype.csv" "$filepath_uuid")
+    # filetype_escaped=$(bash scripts/lookup "metadir/props/filetype/index.csv" "$filetype_uuid")
+    # filetype=$(printf "%s" "$filetype_escaped" | jq -r)
+
+    # moddate_uuid=$(bash scripts/lookup "metadir/pairs/filepath-moddate.csv" "$filepath_uuid")
+    # moddate=$(bash scripts/lookup "metadir/props/date/index.csv" "$moddate_uuid")
+
+    # guestname_uuid=$(bash scripts/lookup "metadir/pairs/datum-guestname.csv" "$datum_uuid")
+    # guestname=$(bash scripts/lookup "metadir/props/name/index.csv" "$guestname_uuid")
+
+    guestdate_uuid=$(bash scripts/lookup "metadir/pairs/datum-guestdate.csv" "$datum_uuid")
+    if [ "$guestdate_uuid"]; then
+        guestdate=$(bash scripts/lookup "metadir/props/date/index.csv" "$guestdate_uuid")
+    else
+        moddate_uuid=$(bash scripts/lookup "metadir/pairs/filepath-moddate.csv" "$filepath_uuid")
+        moddate=$(bash scripts/lookup "metadir/props/date/index.csv" "$moddate_uuid")
+        guestdate="$moddate"
+    fi
+
+    # hostname_uuid=$(bash scripts/lookup "metadir/pairs/datum-hostname.csv" "$datum_uuid")
+    # hostname=$(bash scripts/lookup "metadir/props/name/index.csv" "$hostname_uuid")
+
+    hostdate_uuid=$(bash scripts/lookup "metadir/pairs/datum-hostdate.csv" "$datum_uuid")
+    if [ "$hostdate_uuid" ]; then
+        hostdate=$(bash scripts/lookup "metadir/props/date/index.csv" "$hostdate_uuid")
+    else
+        moddate_uuid=$(bash scripts/lookup "metadir/pairs/filepath-moddate.csv" "$filepath_uuid")
+        moddate=$(bash scripts/lookup "metadir/props/date/index.csv" "$moddate_uuid")
+        hostdate="$moddate"
+    fi
+
+    event=$(jq -c --arg UUID "$datum_uuid" \
+                  --arg FILE_PATH "$filepath" \
+                  --arg GUEST_NAME "fetsorn" \
+                  --arg GUEST_DATE "$gustdate" \
+                  --arg HOST_NAME "fetsorn" \
+                  --arg HOST_DATE "$hostdate" \
+                  --arg DATUM "$datum" \
+                  '{$UUID,$FILE_PATH,$GUEST_NAME,$GUEST_DATE,$HOST_NAME,$HOST_DATE,$DATUM}' <(printf "[]"))
+    printf "%s\n" "$event"
+    printf 1>&2 "                build: %-6s parts\r" "$counter"
+}
+
+export -f build_json
+
+temp=$(mktemp)
+cat <&0 > "$temp"
+
+parallel -a "$temp" build_json {} "{#}"
+printf 1>&2 "\n"
+#+end_src
+** break-fs
+#+begin_src sh :tangle scripts/break-fs :tangle-mode (identity #o755)
+#!/bin/bash
+
+# list of paths | break-fs | path to a temporary metadir
+
+if [ $# -ne 0 ] || [[ -t 0 ]]; then
+  printf 1>&2 "%s\n" "Usage: $0
+
+  Reads a list of filepaths from stdin,
+  stats each, outputs path to a temporary metadir
+
+  EXAMPLE:
+    find . | $0"
+  exit 3
+fi
+
+cache_file () {
+  filepath="$1"
+  counter="$2"
+
+  # skip directories
+  if [ -d "$filepath" ]; then return; fi
+
+  temp=$(mktemp -d)
+
+  mkdir -p "$temp/props/filepath" \
+           "$temp/props/filetype" \
+           "$temp/props/filesize" \
+           "$temp/props/date" \
+           "$temp/props/datum" \
+           "$temp/pairs"
+
+  filepath_trimmed=$(sed 's/^assets\///' <<< "$filepath")
+  filepath_uuid=$(sha256sum <<< "$filepath_trimmed" | cut -c 1-64)
+  filepath_escaped=$(jq -R <<< "$filepath_trimmed")
+  printf '%s,"%s"\n' "$filepath_uuid" "$filepath_escaped" > "$temp/props/filepath/index.csv"
+
+  filesize=$(stat --printf="%s" "$filepath")
+  filesize_uuid=$(sha256sum <<< "$filesize" | cut -c 1-64)
+  printf "%s,%s\n" "$filesize_uuid" "$filesize" > "$temp/props/filesize/index.csv"
+  printf "%s,%s\n" "$filepath_uuid" "$filesize_uuid" > "$temp/pairs/filepath-filesize.csv"
+
+  filetype=$(file -b "$filepath")
+  filetype_uuid=$(sha256sum <<< "$filetype" | cut -c 1-64)
+  filetype_escaped=$(jq -R <<< "$filetype")
+  printf '%s,"%s"\n' "$filetype_uuid" "$filetype_escaped" > "$temp/props/filetype/index.csv"
+  printf "%s,%s\n" "$filepath_uuid" "$filetype_uuid" > "$temp/pairs/filepath-filetype.csv"
+
+  moddate=$(stat --printf="%y" "$filepath" | cut -c 1-10)
+  moddate_uuid=$(sha256sum <<< "$moddate" | cut -c 1-64)
+  printf "%s,%s\n" "$moddate_uuid" "$moddate" > "$temp/props/date/index.csv"
+  printf "%s,%s\n" "$filepath_uuid" "$moddate_uuid" > "$temp/pairs/filepath-moddate.csv"
+
+  filehash=$(sha256sum "$filepath" | cut -c 1-64)
+  printf "%s,%s\n" "$filepath_uuid" "$filehash" > "$temp/pairs/filepath-filehash.csv"
+
+  # add a datum stub to each asset
+  datum_uuid=$(uuidgen | sha256sum | cut -c 1-64)
+  printf '%s,""\n' "$datum_uuid" > "$temp/props/datum/index.csv"
+  printf '%s,%s\n' "$datum_uuid" "$filepath_uuid" > "$temp/pairs/datum-filepath.csv"
+
+  printf 1>&2 "cache: %s - %s...%s\r" "$counter" "${filepath::30}" "${filepath: -30}"
+  printf "%s\n" "$temp"
+}
+
+export -f cache_file
+
+tempins=$(parallel cache_file {} "{#}")
+printf 1>&2 "\n"
+
+tempout=$(mktemp -d)
+
+mkdir -p "$tempout/props/filepath" \
+         "$tempout/props/filetype" \
+         "$tempout/props/filesize" \
+         "$tempout/props/date" \
+         "$tempout/props/datum" \
+         "$tempout/pairs"
+
+sed 's/$/\/props\/filepath\/index.csv/'   <<< "$tempins" | xargs cat > "$tempout/props/filepath/index.csv"
+sed 's/$/\/props\/filesize\/index.csv/'   <<< "$tempins" | xargs cat > "$tempout/props/filesize/index.csv"
+sed 's/$/\/props\/filetype\/index.csv/'   <<< "$tempins" | xargs cat > "$tempout/props/filetype/index.csv"
+sed 's/$/\/props\/date\/index.csv/'       <<< "$tempins" | xargs cat > "$tempout/props/date/index.csv"
+sed 's/$/\/props\/datum\/index.csv/'      <<< "$tempins" | xargs cat > "$tempout/props/datum/index.csv"
+sed 's/$/\/pairs\/filepath-filesize.csv/' <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-filesize.csv"
+sed 's/$/\/pairs\/filepath-filetype.csv/' <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-filetype.csv"
+sed 's/$/\/pairs\/filepath-moddate.csv/'  <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-moddate.csv"
+sed 's/$/\/pairs\/filepath-filehash.csv/' <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-filehash.csv"
+sed 's/$/\/pairs\/datum-filepath.csv/'    <<< "$tempins" | xargs cat > "$tempout/pairs/datum-filepath.csv"
+
+xargs rm -r <<< "$tempins"
+
+printf "%s\n" "$tempout"
+#+end_src
+** break-json
+#+begin_src sh :tangle scripts/break-json :tangle-mode (identity #o755)
+#!/bin/bash
+
+# list of jsons | break-json | path to a temporary metadir
+
+if [ $# -ne 0 ] || [[ -t 0 ]]; then
+    printf 1>&2 "%s\n" "Usage: $0
+
+    Reads a list of json elements from stdin
+    breaks each, outputs path to a temporary metadir
+
+    EXAMPLE:
+      cat cache.json | $0"
+    exit 3
+fi
+
+break_json () {
+
+    line="$1"
+    counter="$2"
+
+    temp=$(mktemp -d)
+
+    mkdir -p "$temp/props/filepath" \
+             "$temp/props/filetype" \
+             "$temp/props/filesize" \
+             "$temp/props/date" \
+             "$temp/props/datum" \
+             "$temp/pairs"
+
+    datum_uuid=$(jq -r '.UUID' <<< "$line")
+    if [ "$datum_uuid" == "" ]; then
+        datum_uuid=$(uuidgen | sha256sum | cut -c 1-64)
+    fi
+    datum=$(printf "%s" "$line" | jq -r 'if .DATUM then .DATUM else "" end')
+    datum_escaped=$(printf "%s\n" "$datum" | jq -R)
+    printf '%s,%s\n' "$datum_uuid" "$datum_escaped" > "$temp/props/datum/index.csv"
+
+    filepath=$(jq -r '.FILE_PATH' <<< "$line")
+    if [ "$filepath" ]; then
+
+        filepath_uuid=$(printf "%s" "$filepath" | sha256sum | cut -c 1-64)
+        filepath_escaped=$(printf "%s" "$filepath" | jq -R)
+        printf "%s,%s\n" "$filepath_uuid" "$filepath_escaped" > "$temp/props/filepath/index.csv"
+        printf '%s,%s\n' "$datum_uuid" "$filepath_uuid" > "$temp/pairs/datum-filepath.csv"
+
+        filesize=$(jq -r '.SIZE' <<< "$line")
+        if [ "$filesize" ]; then
+            filesize_uuid=$(printf "%s" "$filesize" | sha256sum | cut -c 1-64)
+            printf "%s,%s\n" "$filesize_uuid" "$filesize" > "$temp/props/filesize/index.csv"
+            printf "%s,%s\n" "$filepath_uuid" "$filesize_uuid" > "$temp/pairs/filepath-filesize.csv"
+        fi
+
+        filetype=$(jq -r '.FILE_TYPE' <<< "$line")
+        if [ "$filetype" ]; then
+            filetype_uuid=$(printf "%s" "$filetype" | sha256sum | cut -c 1-64)
+            filetype_escaped=$(printf "%s" "$filetype" | jq -R)
+            printf "%s,%s\n" "$filetype_uuid" "$filetype_escaped" > "$temp/props/filetype/index.csv"
+            printf "%s,%s\n" "$filepath_uuid" "$filetype_uuid" > "$temp/pairs/filepath-filetype.csv"
+        fi
+
+        moddate=$(jq -r '.MOD_DATE' <<< "$line")
+        if [ "$moddate" ]; then
+            moddate_uuid=$(printf "%s" "$moddate" | sha256sum | cut -c 1-64)
+            printf "%s,%s\n" "$moddate_uuid" "$moddate" > "$temp/props/date/index.csv"
+            printf "%s,%s\n" "$filepath_uuid" "$moddate_uuid" > "$temp/pairs/filepath-moddate.csv"
+        fi
+
+        filehash=$(jq -r '.HASH' <<< "$line")
+        if [ "$filehash" ]; then
+            printf "%s,%s\n" "$filepath_uuid" "$filehash" > "$temp/pairs/filepath-filehash.csv"
+        fi
+    fi
+
+    printf 1>&2 "break: %s - %s\r" "$counter" "$temp"
+    printf "%s\n" "$temp"
+}
+
+export -f break_json
+
+tempins=$(parallel break_json {} "{#}")
+printf 1>&2 "\n"
+
+tempout=$(mktemp -d)
+
+mkdir -p "$tempout/props/filepath" \
+         "$tempout/props/filetype" \
+         "$tempout/props/filesize" \
+         "$tempout/props/date" \
+         "$tempout/props/datum" \
+         "$tempout/pairs"
+
+sed 's/$/\/props\/filepath\/index.csv/'   <<< "$tempins" | xargs cat > "$tempout/props/filepath/index.csv"
+sed 's/$/\/props\/filesize\/index.csv/'   <<< "$tempins" | xargs cat > "$tempout/props/filesize/index.csv"
+sed 's/$/\/props\/filetype\/index.csv/'   <<< "$tempins" | xargs cat > "$tempout/props/filetype/index.csv"
+sed 's/$/\/props\/date\/index.csv/'       <<< "$tempins" | xargs cat > "$tempout/props/date/index.csv"
+sed 's/$/\/props\/datum\/index.csv/'      <<< "$tempins" | xargs cat > "$tempout/props/datum/index.csv"
+sed 's/$/\/pairs\/filepath-filesize.csv/' <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-filesize.csv"
+sed 's/$/\/pairs\/filepath-filetype.csv/' <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-filetype.csv"
+sed 's/$/\/pairs\/filepath-moddate.csv/'  <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-moddate.csv"
+sed 's/$/\/pairs\/filepath-filehash.csv/' <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-filehash.csv"
+sed 's/$/\/pairs\/datum-filepath.csv/'    <<< "$tempins" | xargs cat > "$tempout/pairs/datum-filepath.csv"
+
+xargs rm -r <<< "$tempins"
+
+printf "%s\n" "$tempout"
+#+end_src
+** break-biorg.awk
+#+begin_src awk :tangle scripts/break-biorg.awk
+
+# break-biorg.awk
+#
+# Reads a biorg compilation,
+# breaks each node, outputs path to a temporary metadir
+
+function escape_json(str) {
+    gsub(/\\/, "\\\\", str)
+    gsub(/"/,  "\\\"", str)
+    gsub(/\b/, "\\b",  str)
+    gsub(/\f/, "\\f",  str)
+    gsub(/\n/, "\\n",  str)
+    gsub(/\r/, "\\r",  str)
+    gsub(/\t/, "\\t",  str)
+
+    return "\42" str "\42"
+}
+function parse_property(line) {
+    gsub("^:", "", line);
+    st = index(line,":");
+    prop_name = substr(line,1,st-1);
+    prop_value = substr(line,st+1);
+    # trim whitespace
+    gsub("^[ \t]+", "", prop_value);
+    gsub("[ \t]+$", "", prop_value);
+
+    return prop_value
+}
+function trim_timestamp(prop_value) {
+    # trim timestamp brackets
+    gsub(/^</, "", prop_value);
+    gsub(/>$/, "", prop_value);
+
+    return prop_value
+}
+function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, filehash, guestname, guestdate, hostname, hostdate, privacy, datum) {
+
+    # printf "%s\n", datum > "/dev/stderr";
+
+    # strip trailing newlines from datum here
+    # to avoid unexpected stripping later
+    gsub(/\n*$/, "", datum);
+    datum_escaped = escape_json(datum);
+
+    # printf "%s\n", datum_escaped > "/dev/stderr";
+
+    # if no datum_uuid is provided, generate unique uuid
+    if (datum_uuid == "") {
+        datum_uuid_cmd = "uuidgen | sha256sum | cut -c 1-64";
+        datum_uuid_cmd | getline datum_uuid_new;
+        datum_uuid = datum_uuid_new;
+        close(datum_uuid_cmd);
+    }
+
+    # write datum_uuid,datum to metadir/props/datum/index.csv
+    datum_index = temp "/props/datum/index.csv";
+    printf "%s,%s\n", datum_uuid, datum_escaped >> datum_index;
+
+    # datum_escaped no longer needed
+    close(datum_escaped_cmd);
+
+    if (guestname != "") {
+        # hashsum guestname to get uuid
+        guestname_uuid_cmd = "printf '%s' '" guestname "' | sha256sum | cut -c 1-64";
+        guestname_uuid_cmd | getline guestname_uuid;
+
+        # write guestname_uuid,guestname to metadir/props/name/index.csv
+        guestname_index = temp "/props/name/index.csv";
+        printf "%s,%s\n", guestname_uuid, guestname >> guestname_index;
+
+        # write datum_uuid,guestname_uuid to metadir/pairs/datum-guestname.csv
+        datum_guestname_pair = temp "/pairs/datum-guestname.csv";
+        printf "%s,%s\n", datum_uuid, guestname_uuid >> datum_guestname_pair;
+
+        # guestname_uuid no longer needed
+        close(guestname_uuid_cmd);
+    } # guestname
+
+    if (guestdate != "") {
+        # hashsum guestdate to get uuid
+        guestdate_uuid_cmd = "printf '%s' '" guestdate "' | sha256sum | cut -c 1-64";
+        guestdate_uuid_cmd | getline guestdate_uuid;
+
+        # write guestdate_uuid,guestdate to metadir/props/date/index.csv
+        guestdate_index = temp "/props/date/index.csv";
+        printf "%s,%s\n", guestdate_uuid, guestdate >> guestdate_index;
+
+        # write datum_uuid,guestdate_uuid to metadir/pairs/datum-guestdate.csv
+        datum_guestdate_pair = temp "/pairs/datum-guestdate.csv";
+        printf "%s,%s\n", datum_uuid, guestdate_uuid >> datum_guestdate_pair;
+
+        # guestdate_uuid no longer needed
+        close(guestdate_uuid_cmd);
+    } # guestdate
+
+    if (hostname != "") {
+        # hashsum hostname to get uuid
+        hostname_uuid_cmd = "printf '%s' '" hostname "' | sha256sum | cut -c 1-64";
+        hostname_uuid_cmd | getline hostname_uuid;
+
+        # write hostname_uuid,hostname to metadir/props/name/index.csv
+        hostname_index = temp "/props/name/index.csv";
+        printf "%s,%s\n", hostname_uuid, hostname >> hostname_index;
+
+        # write datum_uuid,hostname_uuid to metadir/pairs/datum-hostname.csv
+        datum_hostname_pair = temp "/pairs/datum-hostname.csv";
+        printf "%s,%s\n", datum_uuid, hostname_uuid >> datum_hostname_pair;
+
+        # hostname_uuid no longer needed
+        close(hostname_uuid_cmd);
+    } # hostname
+
+    if (hostdate != "") {
+        # hashsum hostdate to get uuid
+        hostdate_uuid_cmd = "printf '%s' '" hostdate "' | sha256sum | cut -c 1-64";
+        hostdate_uuid_cmd | getline hostdate_uuid;
+
+        # write hostdate_uuid,hostdate to metadir/props/date/index.csv
+        hostdate_index = temp "/props/date/index.csv";
+        printf "%s,%s\n", hostdate_uuid, hostdate >> hostdate_index;
+
+        # write datum_uuid,hostdate_uuid to metadir/pairs/datum-hostdate.csv
+        datum_hostdate_pair = temp "/pairs/datum-hostdate.csv";
+        printf "%s,%s\n", datum_uuid, hostdate_uuid >> datum_hostdate_pair;
+
+        # hostdate_uuid no longer needed
+        close(hostdate_uuid_cmd);
+    } # hostdate
+
+    if (privacy != "") {
+        # hashsum privacy to get uuid
+        privacy_uuid_cmd = "printf '%s' '" privacy "' | sha256sum | cut -c 1-64";
+        privacy_uuid_cmd | getline privacy_uuid;
+
+        # write privacy_uuid,privacy to metadir/props/date/index.csv
+        privacy_index = temp "/props/privacy/index.csv";
+        printf "%s,%s\n", privacy_uuid, privacy >> privacy_index;
+
+        # write datum_uuid,privacy_uuid to metadir/pairs/datum-privacy.csv
+        datum_privacy_pair = temp "/pairs/datum-privacy.csv";
+        printf "%s,%s\n", datum_uuid, privacy_uuid >> datum_privacy_pair;
+
+        # privacy_uuid no longer needed
+        close(privacy_uuid_cmd);
+    } # privacy
+
+    if (filepath != "") {
+
+        # filepath can contain arbitrary characters
+        # so it is wrapped in single quotes when passed to bash pipes
+        # escape the single quotes inside the raw string here
+        filepath_bash = filepath;
+        gsub("'", "'\"'\"'", filepath_bash);
+
+        # hashsum filepath to get uuid
+        filepath_uuid_cmd = "printf '%s' '" filepath_bash "' | sha256sum | cut -c 1-64";
+        filepath_uuid_cmd | getline filepath_uuid;
+
+        # escape filepath
+        filepath_escaped = escape_json(filepath);
+
+        # write filepath_uuid,filepath to metadir/props/filepath/index.csv
+        filepath_index = temp "/props/filepath/index.csv";
+        printf "%s,%s\n", filepath_uuid, filepath_escaped >> filepath_index;
+
+        # filepath_escaped no longer needed
+        close(filepath_escaped_cmd);
+
+        # write datum_uuid,filepath_uuid to metadir/pairs/datum-filepath.csv
+        datum_filepath_pair = temp "/pairs/datum-filepath.csv";
+        printf "%s,%s\n", datum_uuid, filepath_uuid >> datum_filepath_pair;
+
+        if (filesize != "") {
+            # hashsum filesize to get uuid
+            filesize_uuid_cmd = "printf '%s' '" filesize "' | sha256sum | cut -c 1-64";
+            filesize_uuid_cmd | getline filesize_uuid;
+
+            # write filesize_uuid,filesize to metadir/props/filesize/index.csv
+            filesize_index = temp "/props/filesize/index.csv";
+            printf "%s,%s\n", filesize_uuid, filesize >> filesize_index;
+
+            # write filepath_uuid,filesize_uuid to metadir/pairs/filepath-filesize.csv
+            filepath_filesize_pair = temp "/pairs/filepath-filesize.csv";
+            printf "%s,%s\n", filepath_uuid, filesize_uuid >> filepath_filesize_pair;
+
+            # filesize_uuid no longer needed
+            close(filesize_uuid_cmd);
+        } # filesize
+
+        if (filetype != "") {
+
+            # filetype can contain arbitrary characters
+            # so it is wrapped in single quotes when passed to bash pipes
+            # escape the single quotes inside the raw string here
+            filetype_bash = filetype;
+            gsub("'", "'\"'\"'", filetype_bash);
+
+            # hashsum filetype to get uuid
+            filetype_uuid_cmd = "printf '%s' '" filetype_bash "' | sha256sum | cut -c 1-64";
+            filetype_uuid_cmd | getline filetype_uuid;
+
+            # escape filetype
+            filetype_escaped = escape_json(filetype);
+
+            # write filetype_uuid,filetype to metadir/props/filetype/index.csv
+            filetype_index = temp "/props/filetype/index.csv";
+            printf "%s,%s\n", filetype_uuid, filetype_escaped >> filetype_index;
+
+            # filetype_escaped no longer needed
+            close(filetype_escaped_cmd);
+
+            # write filepath_uuid,filetype_uuid to metadir/pairs/filepath-filetype.csv
+            filepath_filetype_pair = temp "/pairs/filepath-filetype.csv";
+            printf "%s,%s\n", filepath_uuid, filetype_uuid >> filepath_filetype_pair;
+
+            # filetype_uuid no longer needed
+            close(filetype_uuid_cmd);
+        } # filetype
+
+        if (moddate != "") {
+            # hashsum moddate to get uuid
+            moddate_uuid_cmd = "printf '%s' '" moddate "' | sha256sum | cut -c 1-64";
+            moddate_uuid_cmd | getline moddate_uuid;
+
+            # write moddate_uuid,moddate to metadir/props/date/index.csv
+            moddate_index = temp "/props/date/index.csv";
+            printf "%s,%s\n", moddate_uuid, moddate >> moddate_index;
+
+            # write filepath_uuid,moddate_uuid to metadir/pairs/filepath-moddate.csv
+            filepath_moddate_pair = temp "/pairs/filepath-moddate.csv";
+            printf "%s,%s\n", filepath_uuid, moddate_uuid >> filepath_moddate_pair;
+
+            # moddate_uuid no longer needed
+            close(moddate_uuid_cmd);
+        } # moddate
+
+        if (filehash != "") {
+            # write filepath_uuid,filehash to metadir/pairs/filepath-filehash.csv
+            filepath_filehash_pair = temp "/pairs/filepath-filehash.csv";
+            printf "%s,%s\n", filepath_uuid, filehash >> filepath_filehash_pair;
+        } # filehash
+
+        # filepath_uuid no longer needed
+        close(filepath_uuid_cmd);
+    } # filepath
+}
+BEGIN {
+    "mktemp -d" | getline temp;
+    mkdir_cmd = "mkdir -p " temp "/props/filepath " temp "/props/filesize " temp "/props/filetype " temp "/props/date " temp "/props/name " temp "/props/privacy " temp "/props/datum " temp "/pairs";
+    system(mkdir_cmd);
+    counter=0;
+}
+# heading line
+/^\*/ {
+    # write previous node
+    if (node==1) {
+        write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, filehash, guestname, guestdate, hostname, hostdate, privacy, datum);
+    }
+    # remember to write node on the next heading
+    node=1;
+    # print the number of processed nodes
+    counter++;
+    printf "%s\r", counter >> "/dev/stderr";
+    # delete previous node's props and datum
+    datum_uuid="";
+    filepath="";
+    filesize="";
+    filetype="";
+    moddate="";
+    filehash="";
+    guestname="";
+    guestdate="";
+    hostname="";
+    hostdate="";
+    privacy="";
+    datum="";
+    next;
+}
+# remember to parse lines as properties
+# while inside the property block
+/^:PROPERTIES:/ {
+    property_block=1; next;
+}
+/^:END:/ {
+    property_block=0; next;
+}
+/^:UUID:/ {
+    if (property_block==1) {
+        datum_uuid = parse_property($0);
+        next;
+    }
+}
+/^:FILE_PATH:/ {
+    if (property_block==1) {
+        filepath = parse_property($0);
+        next;
+    }
+}
+/^:FILE_SIZE:/ {
+    if (property_block==1) {
+        filesize = parse_property($0);
+        next;
+    }
+}
+/^:FILE_TYPE:/ {
+    if (property_block==1) {
+        filetype = parse_property($0);
+        next;
+    }
+}
+/^:MOD_DATE:/ {
+    if (property_block==1) {
+        moddate = trim_timestamp(parse_property($0));
+        next;
+    }
+}
+/^:FILE_HASH:/ {
+    if (property_block==1) {
+        filehash = parse_property($0);
+        next;
+    }
+}
+/^:GUEST_NAME:/ {
+    if (property_block==1) {
+        guestname = parse_property($0);
+        next;
+    }
+}
+/^:GUEST_DATE:/ {
+    if (property_block==1) {
+        guestdate = trim_timestamp(parse_property($0));
+        next;
+    }
+}
+/^:HOST_NAME:/ {
+    if (property_block==1) {
+        hostname = parse_property($0);
+        next;
+    }
+}
+/^:HOST_DATE:/ {
+    if (property_block==1) {
+        hostdate = trim_timestamp(parse_property($0));
+        next;
+    }
+}
+/^:PRIVACY:/ {
+    if (property_block==1) {
+        privacy = parse_property($0);
+        next;
+    }
+}
+/^:/ {
+    if (property_block==1) {
+        next;
+    }
+}
+{
+    datum=datum $0 RS;
+}
+END {
+    # write last node
+    write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, filehash, guestname, guestdate, hostname, hostdate, privacy, datum);
+    printf "%s\n", temp;
+}
+#+end_src
+
+** break-biorg
+#+begin_src sh :tangle scripts/break-biorg :tangle-mode (identity #o755)
+#!/bin/bash
+
+# list of jsons | break-json | path to a temporary metadir
+
+if [ $# -ne 0 ] || [[ -t 0 ]]; then
+    printf 1>&2 "%s\n" "Usage: $0
+
+    Reads a list of json elements from stdin
+    breaks each, outputs path to a temporary metadir
+
+    EXAMPLE:
+      cat cache.json | $0"
+    exit 3
+fi
+
+break_biorg () {
+    counter="$1"
+
+    temp=$(awk -f scripts/break-biorg.awk <&0)
+    printf "%s\n" "$temp"
+
+    printf 1>&2 "     break: %s parts - %s\r" "$counter" "$temp"
+}
+
+export -f break_biorg
+
+input=$(mktemp)
+cat <&0 > "$input"
+
+tempins=$(parallel -a "$input" --pipe-part --recstart "* .\n" --recend "\n" break_biorg {} "{#}")
+printf 1>&2 "\n"
+
+tempout=$(mktemp -d)
+
+mkdir -p "$tempout/props/filepath" \
+         "$tempout/props/filetype" \
+         "$tempout/props/filesize" \
+         "$tempout/props/date" \
+         "$tempout/props/datum" \
+         "$tempout/props/name" \
+         "$tempout/props/privacy" \
+         "$tempout/pairs"
+
+# suppress stderr in case no directory is found in tempins
+sed 's/$/\/props\/filepath\/index.csv/'   <<< "$tempins" | xargs cat > "$tempout/props/filepath/index.csv"    2> /dev/null
+sed 's/$/\/props\/filesize\/index.csv/'   <<< "$tempins" | xargs cat > "$tempout/props/filesize/index.csv"    2> /dev/null
+sed 's/$/\/props\/filetype\/index.csv/'   <<< "$tempins" | xargs cat > "$tempout/props/filetype/index.csv"    2> /dev/null
+sed 's/$/\/props\/date\/index.csv/'       <<< "$tempins" | xargs cat > "$tempout/props/date/index.csv"        2> /dev/null
+sed 's/$/\/props\/datum\/index.csv/'      <<< "$tempins" | xargs cat > "$tempout/props/datum/index.csv"       2> /dev/null
+sed 's/$/\/props\/name\/index.csv/'       <<< "$tempins" | xargs cat > "$tempout/props/name/index.csv"        2> /dev/null
+sed 's/$/\/props\/privacy\/index.csv/'    <<< "$tempins" | xargs cat > "$tempout/props/privacy/index.csv"     2> /dev/null
+sed 's/$/\/pairs\/filepath-filesize.csv/' <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-filesize.csv" 2> /dev/null
+sed 's/$/\/pairs\/filepath-filetype.csv/' <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-filetype.csv" 2> /dev/null
+sed 's/$/\/pairs\/filepath-moddate.csv/'  <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-moddate.csv"  2> /dev/null
+sed 's/$/\/pairs\/filepath-filehash.csv/' <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-filehash.csv" 2> /dev/null
+sed 's/$/\/pairs\/datum-filepath.csv/'    <<< "$tempins" | xargs cat > "$tempout/pairs/datum-filepath.csv"    2> /dev/null
+sed 's/$/\/pairs\/datum-hostname.csv/'    <<< "$tempins" | xargs cat > "$tempout/pairs/datum-hostname.csv"    2> /dev/null
+sed 's/$/\/pairs\/datum-hostdate.csv/'    <<< "$tempins" | xargs cat > "$tempout/pairs/datum-hostdate.csv"    2> /dev/null
+sed 's/$/\/pairs\/datum-guestname.csv/'   <<< "$tempins" | xargs cat > "$tempout/pairs/datum-guestname.csv"   2> /dev/null
+sed 's/$/\/pairs\/datum-guestdate.csv/'   <<< "$tempins" | xargs cat > "$tempout/pairs/datum-guestdate.csv"   2> /dev/null
+sed 's/$/\/pairs\/datum-privacy.csv/'     <<< "$tempins" | xargs cat > "$tempout/pairs/datum-privacy.csv"     2> /dev/null
+
+xargs rm -r <<< "$tempins"
+
+printf "%s\n" "$tempout"
+#+end_src
+** gc
+#+begin_src sh :tangle scripts/gc :tangle-mode (identity #o755)
+#!/bin/bash
+
+if [ $# -ne 1 ]; then
+  printf 1>&2 "%s\n" "Usage: $0 METADIR
+
+  Deduplicates, sorts,
+  and removes garbage from METADIR
+
+  EXAMPLE:
+    $0 metadir"
+  exit 3
+fi
+
+metadir="$1"
+
+# usage: gc CSVFILE RGFILE
+# Removes from CSVFILE all keys which are not in RGFILE
+_gc () {
+    csvfile="$1"
+    rgfile="$2"
+
+    cat "$csvfile" | rg -f "$rgfile" | sort | uniq | sort -t "," -k 2 | sponge "$csvfile"
+}
+
+export -f _gc
+
+# TODO: strip trailing newlines from datum here
+# deduplicate and sort datum props
+_gc "$metadir/props/datum/index.csv" <(printf ".*")
+
+# remove dead datum pairs
+datum_props=$(cat "$metadir/props/datum/index.csv" | cut -c 1-64)
+_gc "$metadir/pairs/datum-guestdate.csv" <(printf "%s" "$datum_props")
+_gc "$metadir/pairs/datum-hostdate.csv"  <(printf "%s" "$datum_props")
+_gc "$metadir/pairs/datum-hostname.csv"  <(printf "%s" "$datum_props")
+_gc "$metadir/pairs/datum-guestname.csv" <(printf "%s" "$datum_props")
+_gc "$metadir/pairs/datum-filepath.csv"  <(printf "%s" "$datum_props")
+_gc "$metadir/pairs/datum-privacy.csv"   <(printf "%s" "$datum_props")
+
+# remove garbage filepath props
+filepath_pairs=$(cat "$metadir/pairs/datum-filepath.csv" | cut -c 66- )
+_gc "$metadir/props/filepath/index.csv" <(printf "%s" "$filepath_pairs")
+
+# remove dead filepath pairs
+filepath_props=$(cat "$metadir/props/filepath/index.csv" | cut -c 1-64)
+_gc "$metadir/pairs/filepath-moddate.csv"  <(printf "%s" "$filepath_props")
+_gc "$metadir/pairs/filepath-filesize.csv" <(printf "%s" "$filepath_props")
+_gc "$metadir/pairs/filepath-filetype.csv" <(printf "%s" "$filepath_props")
+_gc "$metadir/pairs/filepath-filehash.csv" <(printf "%s" "$filepath_props")
+
+# remove garbage filesize props
+filesize_pairs=$(cat "$metadir/pairs/filepath-filesize.csv" | cut -c 66-)
+_gc "$metadir/props/filesize/index.csv" <(printf "%s" "$filesize_pairs")
+
+# remove garbage filetype props
+filetype_pairs=$(cat "$metadir/pairs/filepath-filetype.csv" | cut -c 66-)
+_gc "$metadir/props/filetype/index.csv" <(printf "%s" "$filetype_pairs")
+
+# remove garbage date props
+date_pairs=$(cat "$metadir/pairs/datum-hostdate.csv" "$metadir/pairs/datum-guestdate.csv" "$metadir/pairs/filepath-moddate.csv" | cut -c 66-)
+_gc "$metadir/props/date/index.csv" <(printf "%s" "$date_pairs")
+
+# remove garbage name props
+name_pairs=$(cat "$metadir/pairs/datum-hostname.csv" "$metadir/pairs/datum-guestname.csv" | cut -c 66-)
+_gc "$metadir/props/name/index.csv" <(printf "%s" "$name_pairs")
+
+# remove garbage privacy props
+privacy_pairs=$(cat "$metadir/pairs/datum-privacy.csv" | cut -c 66-)
+_gc "$metadir/props/privacy/index.csv" <(printf "%s" "$privacy_pairs")
+#+end_src
+** merge
+#+begin_src sh :tangle scripts/merge :tangle-mode (identity #o755)
+#!/bin/bash
+
+if [ $# -ne 2 ]; then
+  printf 1>&2 "%s\n" "Usage: $0 NEW MAIN
+
+  Merges NEW metadir into MAIN
+
+  EXAMPLE:
+    $0 \"../ops/inbox\" \"./metadir\" > index.json"
+  exit 3
+fi
+
+new="$1"
+main="$2"
+
+append_file () {
+    new="$1"
+    main="$2"
+    csvpath="$3"
+
+    if [ -f "$new/$csvpath" ]; then
+        comm -13 <(cat "$main/$csvpath" | sort) <(cat "$new/$csvpath" | sort) >> "$main/$csvpath"
+    fi
+}
+
+export -f append_file
+
+update_file () {
+    new="$1"
+    main="$2"
+    csvpath="$3"
+
+    if [ -f "$new/$csvpath" ]; then
+        changed_uuids=$(cat "$new/$csvpath" | cut -c 1-64)
+        # use grep because ripgrep bugs out on an empty pattern file
+        # https://github.com/BurntSushi/ripgrep/issues/1332
+        unchanged_lines=$(cat "$main/$csvpath" | grep -vf <(printf "%s" "$changed_uuids"))
+        # remove empty newline in case unchanged_lines is empty
+        cat <(printf "%s\n" "$unchanged_lines") "$new/$csvpath" | sed '/^$/d' > "$main/$csvpath"
+    fi
+}
+
+export -f update_file
+
+# pairs cannot be appended as is
+# because changed entries would conflict with the old
+# instead, remove changed entries from main
+# and only then append changed entries from new
+update_file "$new" "$main" "props/datum/index.csv"
+update_file "$new" "$main" "pairs/datum-filepath.csv"
+update_file "$new" "$main" "pairs/datum-guestdate.csv"
+update_file "$new" "$main" "pairs/datum-guestname.csv"
+update_file "$new" "$main" "pairs/datum-hostdate.csv"
+update_file "$new" "$main" "pairs/datum-hostname.csv"
+update_file "$new" "$main" "pairs/datum-privacy.csv"
+update_file "$new" "$main" "pairs/filepath-filesize.csv"
+update_file "$new" "$main" "pairs/filepath-filetype.csv"
+update_file "$new" "$main" "pairs/filepath-moddate.csv"
+update_file "$new" "$main" "pairs/filepath-filehash.csv"
+
+# the rest is content-addressable so can be appended as is and sorted later
+append_file "$new" "$main" "props/date/index.csv"
+append_file "$new" "$main" "props/name/index.csv"
+append_file "$new" "$main" "props/filepath/index.csv"
+append_file "$new" "$main" "props/filesize/index.csv"
+append_file "$new" "$main" "props/filetype/index.csv"
+append_file "$new" "$main" "props/filepath/index.csv"
+append_file "$new" "$main" "pairs/privacy/index.csv"
+
+# deduplicate, sort and remove orphans
+bash scripts/gc "$main"
+#+end_src
+
