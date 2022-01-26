@@ -9,8 +9,6 @@
 # with content value1_uuid,value2_uuid
 # metadir/props holds csv files value/index.csv
 # with content value_uuid,value
-* tasks
- - add unit tests
 * scripts
 ** puma
 #+begin_src sh :tangle scripts/puma :tangle-mode (identity #o755)
@@ -104,7 +102,7 @@ filename="$1"
 uuid="$2"
 
 # printf 1>&2 "lookup: %s, %s\n" "$filename" "$uuid"
-cat "$filename" | sort | uniq | grep -o "^$uuid,.*" | sed "s/^$uuid,//" | head -n 1
+cat "$filename" | grep -o "^$uuid,.*" | sed "s/^$uuid,//" | head -n 1
 #+end_src
 ** unescape-json.awk
 #+begin_src awk :tangle scripts/unescape-json.awk
@@ -189,7 +187,7 @@ export -f build_biorg
 temp=$(mktemp)
 cat <&0 > "$temp"
 
-parallel -a "$temp" -j 4 build_biorg {} "{#}"
+parallel -a "$temp" build_biorg {} "{#}"
 printf 1>&2 "\n"
 #+end_src
 
@@ -287,65 +285,64 @@ build_json () {
     counter="$2"
 
     datum_uuid=$(printf "%s" "$line" | cut -c 1-64)
-    datum_escaped=$(printf "%s" "$line" | cut -c 66-)
-    datum=$(printf "%s" "$datum_escaped" | jq -r)
+    # datum_escaped=$(printf "%s" "$line" | cut -c 66-)
+    # datum=$(printf "%s" "$datum_escaped" | awk -f scripts/unescape-json.awk)
 
     filepath_uuid=$(bash scripts/lookup "metadir/pairs/datum-filepath.csv" "$datum_uuid")
     filepath_escaped=$(bash scripts/lookup "metadir/props/filepath/index.csv" "$filepath_uuid")
-    filepath=$(printf "%s" "$filepath_escaped" | jq -r)
+    # filepath=$(printf "%s" "$filepath_escaped" | awk -f scripts/unescape-json.awk)
 
     # filesize_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filesize.csv" "$filepath_uuid")
     # filesize=$(bash scripts/lookup "metadir/props/filesize/index.csv" "$filesize_uuid")
 
     # filetype_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filetype.csv" "$filepath_uuid")
     # filetype_escaped=$(bash scripts/lookup "metadir/props/filetype/index.csv" "$filetype_uuid")
-    # filetype=$(printf "%s" "$filetype_escaped" | jq -r)
+    # filetype=$(printf "%s" "$filetype_escaped" | awk -f scripts/unescape-json.awk)
 
     # moddate_uuid=$(bash scripts/lookup "metadir/pairs/filepath-moddate.csv" "$filepath_uuid")
     # moddate=$(bash scripts/lookup "metadir/props/date/index.csv" "$moddate_uuid")
 
     # guestname_uuid=$(bash scripts/lookup "metadir/pairs/datum-guestname.csv" "$datum_uuid")
     # guestname=$(bash scripts/lookup "metadir/props/name/index.csv" "$guestname_uuid")
+    guestname="fetsorn"
 
-    guestdate_uuid=$(bash scripts/lookup "metadir/pairs/datum-guestdate.csv" "$datum_uuid")
-    if [ "$guestdate_uuid"]; then
-        guestdate=$(bash scripts/lookup "metadir/props/date/index.csv" "$guestdate_uuid")
-    else
+    # guestdate_uuid=$(bash scripts/lookup "metadir/pairs/datum-guestdate.csv" "$datum_uuid")
+    # if [ "$guestdate_uuid"]; then
+    #     guestdate=$(bash scripts/lookup "metadir/props/date/index.csv" "$guestdate_uuid")
+    # else
         moddate_uuid=$(bash scripts/lookup "metadir/pairs/filepath-moddate.csv" "$filepath_uuid")
         moddate=$(bash scripts/lookup "metadir/props/date/index.csv" "$moddate_uuid")
         guestdate="$moddate"
-    fi
+    # fi
 
     # hostname_uuid=$(bash scripts/lookup "metadir/pairs/datum-hostname.csv" "$datum_uuid")
     # hostname=$(bash scripts/lookup "metadir/props/name/index.csv" "$hostname_uuid")
+    hostname="fetsorn"
 
-    hostdate_uuid=$(bash scripts/lookup "metadir/pairs/datum-hostdate.csv" "$datum_uuid")
-    if [ "$hostdate_uuid" ]; then
-        hostdate=$(bash scripts/lookup "metadir/props/date/index.csv" "$hostdate_uuid")
-    else
-        moddate_uuid=$(bash scripts/lookup "metadir/pairs/filepath-moddate.csv" "$filepath_uuid")
-        moddate=$(bash scripts/lookup "metadir/props/date/index.csv" "$moddate_uuid")
+    # hostdate_uuid=$(bash scripts/lookup "metadir/pairs/datum-hostdate.csv" "$datum_uuid")
+    # if [ "$hostdate_uuid" ]; then
+    #     hostdate=$(bash scripts/lookup "metadir/props/date/index.csv" "$hostdate_uuid")
+    # else
+        # moddate_uuid=$(bash scripts/lookup "metadir/pairs/filepath-moddate.csv" "$filepath_uuid")
+        # moddate=$(bash scripts/lookup "metadir/props/date/index.csv" "$moddate_uuid")
         hostdate="$moddate"
-    fi
+    # fi
 
-    event=$(jq -c --arg UUID "$datum_uuid" \
-                  --arg FILE_PATH "$filepath" \
-                  --arg GUEST_NAME "fetsorn" \
-                  --arg GUEST_DATE "$gustdate" \
-                  --arg HOST_NAME "fetsorn" \
-                  --arg HOST_DATE "$hostdate" \
-                  --arg DATUM "$datum" \
-                  '{$UUID,$FILE_PATH,$GUEST_NAME,$GUEST_DATE,$HOST_NAME,$HOST_DATE,$DATUM}' <(printf "[]"))
-    printf "%s\n" "$event"
+    printf '{"UUID": "%s","FILE_PATH": %s,"GUEST_NAME": "%s","GUEST_DATE": "%s","HOST_NAME": "%s","HOST_DATE": "%s"}\n' \
+           "$datum_uuid" \
+           "$filepath_escaped" \
+           "$guestname" \
+           "$guestdate" \
+           "$hostname" \
+           "$hostdate"
     printf 1>&2 "                build: %-6s parts\r" "$counter"
 }
 
-export -f build_json
+# temp=$(mktemp)
+# cat <&0 > "$temp"
 
-temp=$(mktemp)
-cat <&0 > "$temp"
-
-parallel -a "$temp" build_json {} "{#}"
+# parallel -a "$temp" build_json {} "{#}"
+parallel build_json {} "{#}"
 printf 1>&2 "\n"
 #+end_src
 ** break-fs
@@ -1009,56 +1006,62 @@ metadir="$1"
 # Removes from CSVFILE all keys which are not in RGFILE
 _gc () {
     csvfile="$1"
-    rgfile="$2"
+    rgpattern="$2"
 
-    cat "$csvfile" | rg -f "$rgfile" | sort | uniq | sort -t "," -k 2 | sponge "$csvfile"
+    printf 1>&2 "gc: %s\n" "$csvfile"
+
+    # _gc freezes on an empty csvfile
+    # probably because grep is blocking on stdin
+    if [ -s "$csvfile" ]; then
+        cat "$csvfile" | rg -f <(printf "%s" "$rgpattern") | sort | uniq | sort -t "," -k 2 | sponge "$csvfile"
+    fi
 }
 
 export -f _gc
 
 # TODO: strip trailing newlines from datum here
 # deduplicate and sort datum props
-_gc "$metadir/props/datum/index.csv" <(printf ".*")
+_gc "$metadir/props/datum/index.csv" ".*"
 
 # remove dead datum pairs
 datum_props=$(cat "$metadir/props/datum/index.csv" | cut -c 1-64)
-_gc "$metadir/pairs/datum-guestdate.csv" <(printf "%s" "$datum_props")
-_gc "$metadir/pairs/datum-hostdate.csv"  <(printf "%s" "$datum_props")
-_gc "$metadir/pairs/datum-hostname.csv"  <(printf "%s" "$datum_props")
-_gc "$metadir/pairs/datum-guestname.csv" <(printf "%s" "$datum_props")
-_gc "$metadir/pairs/datum-filepath.csv"  <(printf "%s" "$datum_props")
-_gc "$metadir/pairs/datum-privacy.csv"   <(printf "%s" "$datum_props")
+_gc "$metadir/pairs/datum-guestdate.csv" "$datum_props"
+_gc "$metadir/pairs/datum-hostdate.csv"  "$datum_props"
+_gc "$metadir/pairs/datum-hostname.csv"  "$datum_props"
+_gc "$metadir/pairs/datum-guestname.csv" "$datum_props"
+_gc "$metadir/pairs/datum-filepath.csv"  "$datum_props"
+_gc "$metadir/pairs/datum-privacy.csv"   "$datum_props"
 
 # remove garbage filepath props
 filepath_pairs=$(cat "$metadir/pairs/datum-filepath.csv" | cut -c 66- )
-_gc "$metadir/props/filepath/index.csv" <(printf "%s" "$filepath_pairs")
+_gc "$metadir/props/filepath/index.csv" "$filepath_pairs"
 
 # remove dead filepath pairs
 filepath_props=$(cat "$metadir/props/filepath/index.csv" | cut -c 1-64)
-_gc "$metadir/pairs/filepath-moddate.csv"  <(printf "%s" "$filepath_props")
-_gc "$metadir/pairs/filepath-filesize.csv" <(printf "%s" "$filepath_props")
-_gc "$metadir/pairs/filepath-filetype.csv" <(printf "%s" "$filepath_props")
-_gc "$metadir/pairs/filepath-filehash.csv" <(printf "%s" "$filepath_props")
+_gc "$metadir/pairs/filepath-moddate.csv"  "$filepath_props"
+_gc "$metadir/pairs/filepath-filesize.csv" "$filepath_props"
+_gc "$metadir/pairs/filepath-filetype.csv" "$filepath_props"
+_gc "$metadir/pairs/filepath-filehash.csv" "$filepath_props"
 
 # remove garbage filesize props
 filesize_pairs=$(cat "$metadir/pairs/filepath-filesize.csv" | cut -c 66-)
-_gc "$metadir/props/filesize/index.csv" <(printf "%s" "$filesize_pairs")
+_gc "$metadir/props/filesize/index.csv" "$filesize_pairs"
 
 # remove garbage filetype props
 filetype_pairs=$(cat "$metadir/pairs/filepath-filetype.csv" | cut -c 66-)
-_gc "$metadir/props/filetype/index.csv" <(printf "%s" "$filetype_pairs")
+_gc "$metadir/props/filetype/index.csv" "$filetype_pairs"
 
 # remove garbage date props
 date_pairs=$(cat "$metadir/pairs/datum-hostdate.csv" "$metadir/pairs/datum-guestdate.csv" "$metadir/pairs/filepath-moddate.csv" | cut -c 66-)
-_gc "$metadir/props/date/index.csv" <(printf "%s" "$date_pairs")
+_gc "$metadir/props/date/index.csv" "$date_pairs"
 
 # remove garbage name props
 name_pairs=$(cat "$metadir/pairs/datum-hostname.csv" "$metadir/pairs/datum-guestname.csv" | cut -c 66-)
-_gc "$metadir/props/name/index.csv" <(printf "%s" "$name_pairs")
+_gc "$metadir/props/name/index.csv" "$name_pairs"
 
 # remove garbage privacy props
 privacy_pairs=$(cat "$metadir/pairs/datum-privacy.csv" | cut -c 66-)
-_gc "$metadir/props/privacy/index.csv" <(printf "%s" "$privacy_pairs")
+_gc "$metadir/props/privacy/index.csv" "$privacy_pairs"
 #+end_src
 ** merge
 #+begin_src sh :tangle scripts/merge :tangle-mode (identity #o755)
@@ -1082,8 +1085,11 @@ append_file () {
     main="$2"
     csvpath="$3"
 
+    printf 1>&2 "append: %s\n" "$csvpath"
     if [ -f "$new/$csvpath" ]; then
         comm -13 <(cat "$main/$csvpath" | sort) <(cat "$new/$csvpath" | sort) >> "$main/$csvpath"
+    else
+        printf 1>&2 "skip %s\n" "$csvpath"
     fi
 }
 
@@ -1094,6 +1100,7 @@ update_file () {
     main="$2"
     csvpath="$3"
 
+    printf 1>&2 "update: %s\n" "$csvpath"
     if [ -f "$new/$csvpath" ]; then
         changed_uuids=$(cat "$new/$csvpath" | cut -c 1-64)
         # use grep because ripgrep bugs out on an empty pattern file
@@ -1101,6 +1108,8 @@ update_file () {
         unchanged_lines=$(cat "$main/$csvpath" | grep -vf <(printf "%s" "$changed_uuids"))
         # remove empty newline in case unchanged_lines is empty
         cat <(printf "%s\n" "$unchanged_lines") "$new/$csvpath" | sed '/^$/d' > "$main/$csvpath"
+    else
+        printf 1>&2 "skip %s\n" "$csvpath"
     fi
 }
 
@@ -1130,8 +1139,6 @@ append_file "$new" "$main" "props/filesize/index.csv"
 append_file "$new" "$main" "props/filetype/index.csv"
 append_file "$new" "$main" "props/filepath/index.csv"
 append_file "$new" "$main" "pairs/privacy/index.csv"
-
-# deduplicate, sort and remove orphans
-bash scripts/gc "$main"
 #+end_src
 
+* tests
