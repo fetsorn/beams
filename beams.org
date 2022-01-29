@@ -184,10 +184,39 @@ build_biorg () {
 
 export -f build_biorg
 
-temp=$(mktemp)
-cat <&0 > "$temp"
+build_batch () {
+    counter="$1"
+    while read -r line; do
+        build_biorg "$line" "$counter"
+        printf 1>&2 "                build: %-6s parts\r" "$counter"
+    done
+}
 
-parallel -a "$temp" build_biorg {} "{#}"
+export -f build_batch
+
+# temp=$(mktemp)
+# cat <&0 > "$temp"
+# printf 1>&2 "%s\n" "$temp"
+
+# causes corruption
+# parallel build_biorg {} "{#}"
+
+# causes corruption
+# parallel -a "$temp" --pipe-part build_batch "{}" "{#}"
+
+# does not cause corruption
+# parallel --pipe build_batch "{}" "{#}"
+
+# does not cause corruption
+counter=0;
+while read -r line; do
+    build_biorg "$line" "$counter";
+    counter=$(($counter + 1));
+done
+
+# output newline to stderr
+# to preserve the last counter line
+# with a carriage return
 printf 1>&2 "\n"
 #+end_src
 
