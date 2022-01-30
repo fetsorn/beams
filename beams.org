@@ -1174,7 +1174,7 @@ append_file "$new" "$main" "pairs/privacy/index.csv"
 #+begin_src sh :tangle scripts/merge-one :tangle-mode (identity #o755)
 #!/bin/bash
 
-if [ $# -ne 2 ]; then
+if [ $# -ne 3 ]; then
   printf 1>&2 "%s\n" "Usage: $0 NEW MAIN UUID
 
   Merges UUID from NEW metadir into MAIN
