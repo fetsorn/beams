@@ -1212,14 +1212,12 @@ update_file () {
 
     printf 1>&2 "update: %s\n" "$csvpath"
     if [ -f "$new/$csvpath" ]; then
-        changed_uuids=$(mktemp)
-        cat "$new/$csvpath" | grep "$uuid" | cut -c 1-64 > "$changed_uuids"
+        changed_uuids="cat \"$new/$csvpath\" | grep \"$uuid\" | cut -c 1-64"
         # use grep because ripgrep bugs out on an empty pattern file
         # https://github.com/BurntSushi/ripgrep/issues/1332
-        unchanged_lines=$(mktemp)
-        cat "$main/$csvpath" | grep -vf "$changed_uuids" > "$unchanged_lines"
+        unchanged_lines="cat \"$main/$csvpath\" | grep -vf <(${changed_uuids})"
         # remove empty newline in case unchanged_lines is empty
-        cat "$unchanged_lines" <(cat "$new/$csvpath" | grep "$uuid") | sed '/^$/d' > "$main/$csvpath"
+        cat <(${unchanged_lines}) <(cat "$new/$csvpath" | grep "$uuid") | sed '/^$/d' > "$main/$csvpath"
     else
         printf 1>&2 "skip %s\n" "$csvpath"
     fi
