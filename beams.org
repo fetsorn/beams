@@ -1217,7 +1217,7 @@ update_file () {
         # https://github.com/BurntSushi/ripgrep/issues/1332
         unchanged_lines="cat \"$main/$csvpath\" | grep -vf <(${changed_uuids})"
         # remove empty newline in case unchanged_lines is empty
-        cat <(${unchanged_lines}) <(cat "$new/$csvpath" | grep "$uuid") | sed '/^$/d' > "$main/$csvpath"
+        cat <($unchanged_lines) <(cat "$new/$csvpath" | grep "$uuid") | sed '/^$/d' > "$main/$csvpath"
     else
         printf 1>&2 "skip %s\n" "$csvpath"
     fi
