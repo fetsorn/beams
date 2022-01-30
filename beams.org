@@ -1229,26 +1229,26 @@ export -f update_file
 # because changed entries would conflict with the old
 # instead, remove changed entries from main
 # and only then append changed entries from new
-update_file "$new" "$main" "props/datum/index.csv"
-update_file "$new" "$main" "pairs/datum-filepath.csv"
-update_file "$new" "$main" "pairs/datum-guestdate.csv"
-update_file "$new" "$main" "pairs/datum-guestname.csv"
-update_file "$new" "$main" "pairs/datum-hostdate.csv"
-update_file "$new" "$main" "pairs/datum-hostname.csv"
-update_file "$new" "$main" "pairs/datum-privacy.csv"
-update_file "$new" "$main" "pairs/filepath-filesize.csv"
-update_file "$new" "$main" "pairs/filepath-filetype.csv"
-update_file "$new" "$main" "pairs/filepath-moddate.csv"
-update_file "$new" "$main" "pairs/filepath-filehash.csv"
+update_file "$new" "$main" "$uuid" "props/datum/index.csv"
+update_file "$new" "$main" "$uuid" "pairs/datum-filepath.csv"
+update_file "$new" "$main" "$uuid" "pairs/datum-guestdate.csv"
+update_file "$new" "$main" "$uuid" "pairs/datum-guestname.csv"
+update_file "$new" "$main" "$uuid" "pairs/datum-hostdate.csv"
+update_file "$new" "$main" "$uuid" "pairs/datum-hostname.csv"
+update_file "$new" "$main" "$uuid" "pairs/datum-privacy.csv"
+update_file "$new" "$main" "$uuid" "pairs/filepath-filesize.csv"
+update_file "$new" "$main" "$uuid" "pairs/filepath-filetype.csv"
+update_file "$new" "$main" "$uuid" "pairs/filepath-moddate.csv"
+update_file "$new" "$main" "$uuid" "pairs/filepath-filehash.csv"
 
 # the rest is content-addressable so can be appended as is and sorted later
-append_file "$new" "$main" "props/date/index.csv"
-append_file "$new" "$main" "props/name/index.csv"
-append_file "$new" "$main" "props/filepath/index.csv"
-append_file "$new" "$main" "props/filesize/index.csv"
-append_file "$new" "$main" "props/filetype/index.csv"
-append_file "$new" "$main" "props/filepath/index.csv"
-append_file "$new" "$main" "pairs/privacy/index.csv"
+append_file "$new" "$main" "$uuid" "props/date/index.csv"
+append_file "$new" "$main" "$uuid" "props/name/index.csv"
+append_file "$new" "$main" "$uuid" "props/filepath/index.csv"
+append_file "$new" "$main" "$uuid" "props/filesize/index.csv"
+append_file "$new" "$main" "$uuid" "props/filetype/index.csv"
+append_file "$new" "$main" "$uuid" "props/filepath/index.csv"
+append_file "$new" "$main" "$uuid" "pairs/privacy/index.csv"
 #+end_src
 
 * tests
