@@ -1170,4 +1170,85 @@ append_file "$new" "$main" "props/filepath/index.csv"
 append_file "$new" "$main" "pairs/privacy/index.csv"
 #+end_src
 
+** merge-one
+#+begin_src sh :tangle scripts/merge-one :tangle-mode (identity #o755)
+#!/bin/bash
+
+if [ $# -ne 2 ]; then
+  printf 1>&2 "%s\n" "Usage: $0 NEW MAIN UUID
+
+  Merges UUID from NEW metadir into MAIN
+
+  EXAMPLE:
+    $0 \"../ops/inbox\" \"./metadir\" > index.json"
+  exit 3
+fi
+
+new="$1"
+main="$2"
+uuid="$3"
+
+append_file () {
+    new="$1"
+    main="$2"
+    uuid="$3"
+    csvpath="$4"
+
+    printf 1>&2 "append: %s\n" "$csvpath"
+    if [ -f "$new/$csvpath" ]; then
+        comm -13 <(cat "$main/$csvpath" | grep "$uuid") <(cat "$new/$csvpath" | grep "$uuid") >> "$main/$csvpath"
+    else
+        printf 1>&2 "skip %s\n" "$csvpath"
+    fi
+}
+
+export -f append_file
+
+update_file () {
+    new="$1"
+    main="$2"
+    uuid="$3"
+    csvpath="$4"
+
+    printf 1>&2 "update: %s\n" "$csvpath"
+    if [ -f "$new/$csvpath" ]; then
+        changed_uuids=$(cat "$new/$csvpath" | grep "$uuid" | cut -c 1-64)
+        # use grep because ripgrep bugs out on an empty pattern file
+        # https://github.com/BurntSushi/ripgrep/issues/1332
+        unchanged_lines=$(cat "$main/$csvpath" | grep -vf <(printf "%s" "$changed_uuids"))
+        # remove empty newline in case unchanged_lines is empty
+        cat <(printf "%s\n" "$unchanged_lines") <(cat "$new/$csvpath" | grep "$uuid") | sed '/^$/d' > "$main/$csvpath"
+    else
+        printf 1>&2 "skip %s\n" "$csvpath"
+    fi
+}
+
+export -f update_file
+
+# pairs cannot be appended as is
+# because changed entries would conflict with the old
+# instead, remove changed entries from main
+# and only then append changed entries from new
+update_file "$new" "$main" "props/datum/index.csv"
+update_file "$new" "$main" "pairs/datum-filepath.csv"
+update_file "$new" "$main" "pairs/datum-guestdate.csv"
+update_file "$new" "$main" "pairs/datum-guestname.csv"
+update_file "$new" "$main" "pairs/datum-hostdate.csv"
+update_file "$new" "$main" "pairs/datum-hostname.csv"
+update_file "$new" "$main" "pairs/datum-privacy.csv"
+update_file "$new" "$main" "pairs/filepath-filesize.csv"
+update_file "$new" "$main" "pairs/filepath-filetype.csv"
+update_file "$new" "$main" "pairs/filepath-moddate.csv"
+update_file "$new" "$main" "pairs/filepath-filehash.csv"
+
+# the rest is content-addressable so can be appended as is and sorted later
+append_file "$new" "$main" "props/date/index.csv"
+append_file "$new" "$main" "props/name/index.csv"
+append_file "$new" "$main" "props/filepath/index.csv"
+append_file "$new" "$main" "props/filesize/index.csv"
+append_file "$new" "$main" "props/filetype/index.csv"
+append_file "$new" "$main" "props/filepath/index.csv"
+append_file "$new" "$main" "pairs/privacy/index.csv"
+#+end_src
+
 * tests
