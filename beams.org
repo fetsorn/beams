@@ -1253,4 +1253,186 @@ append_file "$new" "$main" "$uuid" "props/filepath/index.csv"
 append_file "$new" "$main" "$uuid" "pairs/privacy/index.csv"
 #+end_src
 
+** merge-gedcom.awk
+#+begin_src awk :tangle scripts/merge-gedcom.awk
+
+# break-biorg.awk
+#
+# Merge gedcom files
+# structures must have _UID tags
+
+# structures_old
+#   - {head}
+#      - "structure"
+#          - {structure}
+#      - "xref"
+#          - {xref}
+function merge() {
+    individuals = 1
+    families = 1
+
+    # for every uuid, map every xref to a new xref
+    for (uuid in structures_old) {
+
+        # set xref_old to match INDI or FAM
+        for (head in structures_old[uuid]) {
+            xref_old = structures_old[uuid][head]["xref"]
+        }
+
+        # create new xref
+        if (match(xref_old, /I/)) {
+            xref_new = "I" sprintf("%04i", individuals++)
+        } else if (match(xref_old, /F/)) {
+            xref_new = "F" sprintf("%04i", families++)
+        }
+
+        # map old xrefs to the new xref for renumbering
+        for (head in structures_old[uuid]) {
+            xref_old = structures_old[uuid][head]["xref"]
+            # printf "set head: %s old: %s new: %s\n", head, xref_old, xref_new >> "/dev/stderr"
+            xrefs[head][xref_old] = xref_new
+        }
+    }
+
+    # for every uuid
+    # get structure for every xref
+    # renumber all xrefs inside
+    # concatenate and deduplicate
+    for (uuid in structures_old) {
+
+        # build zerolevel line
+        for (head in structures_old[uuid]) {
+            xref_old = structures_old[uuid][head]["xref"]
+            if (match(xref_old, /I/)) {
+                xrefline = "0 @" xrefs[head][xref_old] "@" " INDI" RS
+            } else if (match(xref_old, /F/)) {
+                xrefline = "0 @" xrefs[head][xref_old] "@" " FAM" RS
+            }
+        }
+
+        # renumber all xrefs in structures and concatenate
+        structure_dup = ""
+        for (head in structures_old[uuid]) {
+            structure_old = structures_old[uuid][head]["structure"]
+
+            # for every line in structure_old
+            gsub(/\n$/, "", structure_old)
+            split(structure_old, lines, RS)
+            for (i in lines) {
+                line = lines[i] RS
+
+                # if the line is a substructure
+                # and the superstructure was removed
+                # remove the line
+                if (delete_substructures) {
+                    if (match(line, /^2/)) {
+                        line = ""
+                    } else {
+                        # otherwise stop deleting substructures
+                        delete_substructures = 0
+                    }
+                }
+                # if a line has an xref
+                if (match(line, /@.*@/)) {
+                    # extract xref
+                    xref_old = substr(line, RSTART, RLENGTH)
+                    gsub(/@/, "", xref_old)
+                    # find the new xref that maches the old xref
+                    xref_new = xrefs[head][xref_old]
+                    # printf "get head: %s old: %s new: %s\n", head, xref_to_renumber, xref_new >> "/dev/stderr"
+                    # if no new xref found, delete the line
+                    if (xref_new=="") {
+                        line = ""
+                        # remember to delete substructures
+                        delete_substructures = 1
+                    } else {
+                        # otherwise replace old xref with a new one
+                        gsub(xref_old, xref_new, line)
+                    }
+                }
+                # append line to duplicated structure
+                structure_dup = structure_dup line
+            }
+        }
+
+        # printf "--dup-------\n" >> "/dev/stderr"
+        # printf "%s", structure_dup >> "/dev/stderr"
+
+        # deduplicate
+        gsub(/\n$/, "", structure_dup)
+        split(structure_dup, lines, RS)
+        structure_uniq = ""
+        delete seen
+        for (i in lines) {
+            line = lines[i]
+            if (!seen[line]++) {
+                structure_uniq = structure_uniq line RS
+            }
+        }
+
+        # printf "--uniq------\n" >> "/dev/stderr"
+        # printf "%s", structure_uniq >> "/dev/stderr"
+
+        # build uuid line
+        uuidline = "1 _UID " uuid RS
+
+        printf "%s", xrefline structure_uniq uuidline
+    }
+}
+
+BEGIN {
+    printf "0 HEAD\n"
+    printf "1 GEDC\n"
+    printf "2 VERS 5.5.1\n"
+    printf "2 FORM LINEAGE-LINKED\n"
+    printf "1 CHAR UTF-8\n"
+    printf "1 LANG Russian\n"
+}
+/^0 HEAD/ {
+    head++
+    next
+}
+/^0 TRLR/ {
+    if (isStructure==1) {
+        structures_old[uuid][head]["xref"] = xref
+        structures_old[uuid][head]["structure"] = structure
+    }
+    isStructure = 0
+    next
+}
+/^0/ {
+    if (isStructure==1) {
+        structures_old[uuid][head]["xref"] = xref
+        structures_old[uuid][head]["structure"] = structure
+    }
+    # remember to save structure
+    isStructure = 1
+    # erase the last structure
+    structure = ""
+    uuid = ""
+    xref = ""
+    # read xref
+    xref = match($0, /@.*@/)
+    xref = substr($0, RSTART, RLENGTH)
+    gsub(/@/, "", xref)
+
+    next
+}
+/^1 _UID/ {
+    # read uuid
+    uuid = $0
+    gsub(/^1 _UID /, "", uuid)
+
+    next
+}
+{
+    if (isStructure==1) {
+        structure=structure $0 RS
+    }
+}
+END {
+    merge()
+    printf "0 TRLR\n"
+}
+#+end_src
 * tests
