@@ -1261,6 +1261,17 @@ append_file "$new" "$main" "$uuid" "pairs/privacy/index.csv"
 # Merge gedcom files
 # structures must have _UID tags
 
+function structures_old_push(uuid, head, xref, structure) {
+    # if a structure doesn't have a uuid, generate one
+    if (uuid == "") {
+        uuidgen_cmd = "uuidgen"
+        uuidgen_cmd | getline uuid_value
+        uuid = uuid_value
+        close(uuidgen_cmd)
+    }
+    structures_old[uuid][head]["xref"] = xref
+    structures_old[uuid][head]["structure"] = structure
+}
 # structures_old
 #   - {head}
 #      - "structure"
@@ -1394,16 +1405,14 @@ BEGIN {
 }
 /^0 TRLR/ {
     if (isStructure==1) {
-        structures_old[uuid][head]["xref"] = xref
-        structures_old[uuid][head]["structure"] = structure
+        structures_old_push(uuid, head, xref, structure)
     }
     isStructure = 0
     next
 }
 /^0/ {
     if (isStructure==1) {
-        structures_old[uuid][head]["xref"] = xref
-        structures_old[uuid][head]["structure"] = structure
+        structures_old_push(uuid, head, xref, structure)
     }
     # remember to save structure
     isStructure = 1
