@@ -1435,4 +1435,24 @@ END {
     printf "0 TRLR\n"
 }
 #+end_src
+** adduuid.awk
+#+begin_src awk
+BEGIN {}
+/^0 .* INDI/ {
+    "uuidgen" | getline uuid
+    printf "%s\n1 _UID %s\n", $0, uuid
+    close("uuidgen")
+    next
+}
+/^0 .* FAM/ {
+    "uuidgen" | getline uuid
+    printf "%s\n1 _UID %s\n", $0, uuid
+    close("uuidgen")
+    next
+}
+{
+    print
+}
+END {}
+#+end_src
 * tests
