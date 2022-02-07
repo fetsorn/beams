@@ -636,7 +636,7 @@ function trim_timestamp(prop_value) {
 
     return prop_value
 }
-function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, filehash, guestname, guestdate, hostname, hostdate, privacy, datum) {
+function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, filehash, guestname, guestdate, hostname, hostdate, privacy, tag, datum) {
 
     # printf "%s\n", datum > "/dev/stderr";
 
@@ -747,6 +747,23 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
         close(privacy_uuid_cmd);
     } # privacy
 
+    if (tag != "") {
+        # hashsum tag to get uuid
+        tag_uuid_cmd = "printf '%s' '" tag "' | sha256sum | cut -c 1-64";
+        tag_uuid_cmd | getline tag_uuid;
+
+        # write tag_uuid,tag to metadir/props/date/index.csv
+        tag_index = temp "/props/tag/index.csv";
+        printf "%s,%s\n", tag_uuid, tag >> tag_index;
+
+        # write datum_uuid,tag_uuid to metadir/pairs/datum-tag.csv
+        datum_tag_pair = temp "/pairs/datum-tag.csv";
+        printf "%s,%s\n", datum_uuid, tag_uuid >> datum_tag_pair;
+
+        # tag_uuid no longer needed
+        close(tag_uuid_cmd);
+    } # tag
+
     if (filepath != "") {
 
         # filepath can contain arbitrary characters
@@ -849,7 +866,7 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
 }
 BEGIN {
     "mktemp -d" | getline temp;
-    mkdir_cmd = "mkdir -p " temp "/props/filepath " temp "/props/filesize " temp "/props/filetype " temp "/props/date " temp "/props/name " temp "/props/privacy " temp "/props/datum " temp "/pairs";
+    mkdir_cmd = "mkdir -p " temp "/props/filepath " temp "/props/filesize " temp "/props/filetype " temp "/props/date " temp "/props/name " temp "/props/privacy " temp "/props/tag " temp "/props/datum " temp "/pairs";
     system(mkdir_cmd);
     counter=0;
 }
@@ -857,7 +874,7 @@ BEGIN {
 /^\*/ {
     # write previous node
     if (node==1) {
-        write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, filehash, guestname, guestdate, hostname, hostdate, privacy, datum);
+        write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, filehash, guestname, guestdate, hostname, hostdate, privacy, tag, datum);
     }
     # remember to write node on the next heading
     node=1;
@@ -876,6 +893,7 @@ BEGIN {
     hostname="";
     hostdate="";
     privacy="";
+    tag="";
     datum="";
     next;
 }
@@ -953,6 +971,12 @@ BEGIN {
         next;
     }
 }
+/^:TAG:/ {
+    if (property_block==1) {
+        tag = parse_property($0);
+        next;
+    }
+}
 /^:/ {
     if (property_block==1) {
         next;
@@ -963,7 +987,7 @@ BEGIN {
 }
 END {
     # write last node
-    write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, filehash, guestname, guestdate, hostname, hostdate, privacy, datum);
+    write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, filehash, guestname, guestdate, hostname, hostdate, privacy, tag, datum);
     printf "%s\n", temp;
 }
 #+end_src
@@ -1011,6 +1035,7 @@ mkdir -p "$tempout/props/filepath" \
          "$tempout/props/datum" \
          "$tempout/props/name" \
          "$tempout/props/privacy" \
+         "$tempout/props/tag" \
          "$tempout/pairs"
 
 # suppress stderr in case no directory is found in tempins
@@ -1021,6 +1046,7 @@ sed 's/$/\/props\/date\/index.csv/'       <<< "$tempins" | xargs cat > "$tempout
 sed 's/$/\/props\/datum\/index.csv/'      <<< "$tempins" | xargs cat > "$tempout/props/datum/index.csv"       2> /dev/null
 sed 's/$/\/props\/name\/index.csv/'       <<< "$tempins" | xargs cat > "$tempout/props/name/index.csv"        2> /dev/null
 sed 's/$/\/props\/privacy\/index.csv/'    <<< "$tempins" | xargs cat > "$tempout/props/privacy/index.csv"     2> /dev/null
+sed 's/$/\/props\/tag\/index.csv/'    <<< "$tempins" | xargs cat > "$tempout/props/tag/index.csv"     2> /dev/null
 sed 's/$/\/pairs\/filepath-filesize.csv/' <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-filesize.csv" 2> /dev/null
 sed 's/$/\/pairs\/filepath-filetype.csv/' <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-filetype.csv" 2> /dev/null
 sed 's/$/\/pairs\/filepath-moddate.csv/'  <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-moddate.csv"  2> /dev/null
@@ -1031,6 +1057,7 @@ sed 's/$/\/pairs\/datum-hostdate.csv/'    <<< "$tempins" | xargs cat > "$tempout
 sed 's/$/\/pairs\/datum-guestname.csv/'   <<< "$tempins" | xargs cat > "$tempout/pairs/datum-guestname.csv"   2> /dev/null
 sed 's/$/\/pairs\/datum-guestdate.csv/'   <<< "$tempins" | xargs cat > "$tempout/pairs/datum-guestdate.csv"   2> /dev/null
 sed 's/$/\/pairs\/datum-privacy.csv/'     <<< "$tempins" | xargs cat > "$tempout/pairs/datum-privacy.csv"     2> /dev/null
+sed 's/$/\/pairs\/datum-tag.csv/'     <<< "$tempins" | xargs cat > "$tempout/pairs/datum-tag.csv"     2> /dev/null
 
 xargs rm -r <<< "$tempins"
 
@@ -1082,6 +1109,7 @@ _gc "$metadir/pairs/datum-hostname.csv"  "$datum_props"
 _gc "$metadir/pairs/datum-guestname.csv" "$datum_props"
 _gc "$metadir/pairs/datum-filepath.csv"  "$datum_props"
 _gc "$metadir/pairs/datum-privacy.csv"   "$datum_props"
+_gc "$metadir/pairs/datum-tag.csv"   "$datum_props"
 
 # remove garbage filepath props
 filepath_pairs=$(cat "$metadir/pairs/datum-filepath.csv" | cut -c 66- )
@@ -1113,6 +1141,10 @@ _gc "$metadir/props/name/index.csv" "$name_pairs"
 # remove garbage privacy props
 privacy_pairs=$(cat "$metadir/pairs/datum-privacy.csv" | cut -c 66-)
 _gc "$metadir/props/privacy/index.csv" "$privacy_pairs"
+
+# remove garbage tag props
+tag_pairs=$(cat "$metadir/pairs/datum-tag.csv" | cut -c 66-)
+_gc "$metadir/props/tag/index.csv" "$tag_pairs"
 #+end_src
 ** merge
 #+begin_src sh :tangle scripts/merge :tangle-mode (identity #o755)
@@ -1156,13 +1188,13 @@ update_file () {
         # cmd > mktemp and then <(cat | cmd) replaces <(printf $(cmd) | cmd)
         # to fix an inconsistent bug that corrupts multibyte characters
         changed_uuids=$(mktemp)
-        cat "$new/$csvpath" | grep "$uuid" | cut -c 1-64 > "$changed_uuids"
+        cat "$new/$csvpath" | cut -c 1-64 > "$changed_uuids"
         # use grep because ripgrep bugs out on an empty pattern file
         # https://github.com/BurntSushi/ripgrep/issues/1332
         unchanged_lines=$(mktemp)
         cat "$main/$csvpath" | grep -vf "$changed_uuids" > "$unchanged_lines"
         # remove empty newline in case unchanged_lines is empty
-        cat "$unchanged_lines" <(cat "$new/$csvpath" | grep "$uuid") | sed '/^$/d' > "$main/$csvpath"
+        cat "$unchanged_lines" <(cat "$new/$csvpath") | sed '/^$/d' > "$main/$csvpath"
     else
         printf 1>&2 "skip %s\n" "$csvpath"
     fi
@@ -1181,6 +1213,7 @@ update_file "$new" "$main" "pairs/datum-guestname.csv"
 update_file "$new" "$main" "pairs/datum-hostdate.csv"
 update_file "$new" "$main" "pairs/datum-hostname.csv"
 update_file "$new" "$main" "pairs/datum-privacy.csv"
+update_file "$new" "$main" "pairs/datum-tag.csv"
 update_file "$new" "$main" "pairs/filepath-filesize.csv"
 update_file "$new" "$main" "pairs/filepath-filetype.csv"
 update_file "$new" "$main" "pairs/filepath-moddate.csv"
@@ -1194,7 +1227,8 @@ update_file "$new" "$main" "props/filepath/index.csv"
 update_file "$new" "$main" "props/filesize/index.csv"
 update_file "$new" "$main" "props/filetype/index.csv"
 update_file "$new" "$main" "props/filepath/index.csv"
-update_file "$new" "$main" "pairs/privacy/index.csv"
+update_file "$new" "$main" "props/privacy/index.csv"
+update_file "$new" "$main" "props/tag/index.csv"
 #+end_src
 
 ** merge-one
@@ -1265,19 +1299,22 @@ update_file "$new" "$main" "$uuid" "pairs/datum-guestname.csv"
 update_file "$new" "$main" "$uuid" "pairs/datum-hostdate.csv"
 update_file "$new" "$main" "$uuid" "pairs/datum-hostname.csv"
 update_file "$new" "$main" "$uuid" "pairs/datum-privacy.csv"
+update_file "$new" "$main" "$uuid" "pairs/datum-tag.csv"
 update_file "$new" "$main" "$uuid" "pairs/filepath-filesize.csv"
 update_file "$new" "$main" "$uuid" "pairs/filepath-filetype.csv"
 update_file "$new" "$main" "$uuid" "pairs/filepath-moddate.csv"
 update_file "$new" "$main" "$uuid" "pairs/filepath-filehash.csv"
 
-# the rest is content-addressable so can be appended as is and sorted later
-append_file "$new" "$main" "$uuid" "props/date/index.csv"
-append_file "$new" "$main" "$uuid" "props/name/index.csv"
-append_file "$new" "$main" "$uuid" "props/filepath/index.csv"
-append_file "$new" "$main" "$uuid" "props/filesize/index.csv"
-append_file "$new" "$main" "$uuid" "props/filetype/index.csv"
-append_file "$new" "$main" "$uuid" "props/filepath/index.csv"
-append_file "$new" "$main" "$uuid" "pairs/privacy/index.csv"
+# the rest is content-addressable so can be appended and garbage collected later
+# but update is faster than garbage collection
+update_file "$new" "$main" "$uuid" "props/date/index.csv"
+update_file "$new" "$main" "$uuid" "props/name/index.csv"
+update_file "$new" "$main" "$uuid" "props/filepath/index.csv"
+update_file "$new" "$main" "$uuid" "props/filesize/index.csv"
+update_file "$new" "$main" "$uuid" "props/filetype/index.csv"
+update_file "$new" "$main" "$uuid" "props/filepath/index.csv"
+update_file "$new" "$main" "$uuid" "props/privacy/index.csv"
+update_file "$new" "$main" "$uuid" "props/tag/index.csv"
 #+end_src
 
 ** merge-gedcom.awk
