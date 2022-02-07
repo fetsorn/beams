@@ -1153,6 +1153,8 @@ update_file () {
 
     printf 1>&2 "update: %s\n" "$csvpath"
     if [ -f "$new/$csvpath" ]; then
+        # cmd > mktemp and then <(cat | cmd) replaces <(printf $(cmd) | cmd)
+        # to fix an inconsistent bug that corrupts multibyte characters
         changed_uuids=$(mktemp)
         cat "$new/$csvpath" | grep "$uuid" | cut -c 1-64 > "$changed_uuids"
         # use grep because ripgrep bugs out on an empty pattern file
