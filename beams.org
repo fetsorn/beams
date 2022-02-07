@@ -1182,14 +1182,15 @@ update_file "$new" "$main" "pairs/filepath-filetype.csv"
 update_file "$new" "$main" "pairs/filepath-moddate.csv"
 update_file "$new" "$main" "pairs/filepath-filehash.csv"
 
-# the rest is content-addressable so can be appended as is and sorted later
-append_file "$new" "$main" "props/date/index.csv"
-append_file "$new" "$main" "props/name/index.csv"
-append_file "$new" "$main" "props/filepath/index.csv"
-append_file "$new" "$main" "props/filesize/index.csv"
-append_file "$new" "$main" "props/filetype/index.csv"
-append_file "$new" "$main" "props/filepath/index.csv"
-append_file "$new" "$main" "pairs/privacy/index.csv"
+# the rest is content-addressable so can be appended and garbage collected later
+# but update is faster than garbage collection
+update_file "$new" "$main" "props/date/index.csv"
+update_file "$new" "$main" "props/name/index.csv"
+update_file "$new" "$main" "props/filepath/index.csv"
+update_file "$new" "$main" "props/filesize/index.csv"
+update_file "$new" "$main" "props/filetype/index.csv"
+update_file "$new" "$main" "props/filepath/index.csv"
+update_file "$new" "$main" "pairs/privacy/index.csv"
 #+end_src
 
 ** merge-one
