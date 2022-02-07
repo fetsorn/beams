@@ -104,12 +104,12 @@ uuid="$2"
 # printf 1>&2 "lookup: %s, %s\n" "$filename" "$uuid"
 cat "$filename" | grep -o "^$uuid,.*" | sed "s/^$uuid,//" | head -n 1
 #+end_src
-** unescape-json.awk
-#+begin_src awk :tangle scripts/unescape-json.awk
+** unescape.awk
+#+begin_src awk :tangle scripts/unescape.awk
 
-# unescape-json.awk
+# unescape.awk
 #
-# unescapes some characters when converting from json
+# unescapes data from json or metadir
 
 function unescape_json(str) {
     gsub(/^"/, "", str)
@@ -126,6 +126,28 @@ function unescape_json(str) {
 }
 {
     printf "%s", unescape_json($0)
+}
+#+end_src
+** escape.awk
+#+begin_src awk :tangle scripts/escape.awk
+
+# escape.awk
+#
+# escapes data for json or metadir
+
+function escape_json(str) {
+    gsub(/\\/, "\\\\", str)
+    gsub(/"/,  "\\\"", str)
+    gsub(/\b/, "\\b",  str)
+    gsub(/\f/, "\\f",  str)
+    gsub(/\n/, "\\n",  str)
+    gsub(/\r/, "\\r",  str)
+    gsub(/\t/, "\\t",  str)
+
+    return "\42" str "\42"
+}
+{
+    printf "%s", escape_json($0)
 }
 #+end_src
 ** build-biorg
@@ -151,18 +173,18 @@ build_biorg () {
 
     datum_uuid=$(printf "%s" "$line" | cut -c 1-64)
     datum_escaped=$(printf "%s" "$line" | cut -c 66-)
-    datum=$(printf "%s" "$datum_escaped" | awk -f scripts/unescape-json.awk)
+    datum=$(printf "%s" "$datum_escaped" | awk -f scripts/unescape.awk)
 
     filepath_uuid=$(bash scripts/lookup "metadir/pairs/datum-filepath.csv" "$datum_uuid")
     filepath_escaped=$(bash scripts/lookup "metadir/props/filepath/index.csv" "$filepath_uuid")
-    filepath=$(printf "%s" "$filepath_escaped" | awk -f scripts/unescape-json.awk)
+    filepath=$(printf "%s" "$filepath_escaped" | awk -f scripts/unescape.awk)
 
     filesize_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filesize.csv" "$filepath_uuid")
     filesize=$(bash scripts/lookup "metadir/props/filesize/index.csv" "$filesize_uuid")
 
     filetype_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filetype.csv" "$filepath_uuid")
     filetype_escaped=$(bash scripts/lookup "metadir/props/filetype/index.csv" "$filetype_uuid")
-    filetype=$(printf "%s" "$filetype_escaped" | awk -f scripts/unescape-json.awk)
+    filetype=$(printf "%s" "$filetype_escaped" | awk -f scripts/unescape.awk)
 
     moddate_uuid=$(bash scripts/lookup "metadir/pairs/filepath-moddate.csv" "$filepath_uuid")
     moddate=$(bash scripts/lookup "metadir/props/date/index.csv" "$moddate_uuid")
@@ -315,18 +337,18 @@ build_json () {
 
     datum_uuid=$(printf "%s" "$line" | cut -c 1-64)
     # datum_escaped=$(printf "%s" "$line" | cut -c 66-)
-    # datum=$(printf "%s" "$datum_escaped" | awk -f scripts/unescape-json.awk)
+    # datum=$(printf "%s" "$datum_escaped" | awk -f scripts/unescape.awk)
 
     filepath_uuid=$(bash scripts/lookup "metadir/pairs/datum-filepath.csv" "$datum_uuid")
     filepath_escaped=$(bash scripts/lookup "metadir/props/filepath/index.csv" "$filepath_uuid")
-    # filepath=$(printf "%s" "$filepath_escaped" | awk -f scripts/unescape-json.awk)
+    # filepath=$(printf "%s" "$filepath_escaped" | awk -f scripts/unescape.awk)
 
     # filesize_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filesize.csv" "$filepath_uuid")
     # filesize=$(bash scripts/lookup "metadir/props/filesize/index.csv" "$filesize_uuid")
 
     # filetype_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filetype.csv" "$filepath_uuid")
     # filetype_escaped=$(bash scripts/lookup "metadir/props/filetype/index.csv" "$filetype_uuid")
-    # filetype=$(printf "%s" "$filetype_escaped" | awk -f scripts/unescape-json.awk)
+    # filetype=$(printf "%s" "$filetype_escaped" | awk -f scripts/unescape.awk)
 
     # moddate_uuid=$(bash scripts/lookup "metadir/pairs/filepath-moddate.csv" "$filepath_uuid")
     # moddate=$(bash scripts/lookup "metadir/props/date/index.csv" "$moddate_uuid")
