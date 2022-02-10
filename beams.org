@@ -120,6 +120,7 @@ function unescape_json(str) {
     gsub(/\\n/, "\n",  str)
     gsub(/\\r/, "\r",  str)
     gsub(/\\t/, "\t",  str)
+    gsub(/\\v/, "\v",  str)
     gsub(/\\\\/, "\\", str)
 
     return str
@@ -143,6 +144,7 @@ function escape_json(str) {
     gsub(/\n/, "\\n",  str)
     gsub(/\r/, "\\r",  str)
     gsub(/\t/, "\\t",  str)
+    gsub(/\v/, "\\v",  str)
 
     return "\42" str "\42"
 }
@@ -615,6 +617,7 @@ function escape_json(str) {
     gsub(/\n/, "\\n",  str)
     gsub(/\r/, "\\r",  str)
     gsub(/\t/, "\\t",  str)
+    gsub(/\v/, "\\v",  str)
 
     return "\42" str "\42"
 }
@@ -1057,7 +1060,7 @@ sed 's/$/\/pairs\/datum-hostdate.csv/'    <<< "$tempins" | xargs cat > "$tempout
 sed 's/$/\/pairs\/datum-guestname.csv/'   <<< "$tempins" | xargs cat > "$tempout/pairs/datum-guestname.csv"   2> /dev/null
 sed 's/$/\/pairs\/datum-guestdate.csv/'   <<< "$tempins" | xargs cat > "$tempout/pairs/datum-guestdate.csv"   2> /dev/null
 sed 's/$/\/pairs\/datum-privacy.csv/'     <<< "$tempins" | xargs cat > "$tempout/pairs/datum-privacy.csv"     2> /dev/null
-sed 's/$/\/pairs\/datum-tag.csv/'     <<< "$tempins" | xargs cat > "$tempout/pairs/datum-tag.csv"     2> /dev/null
+sed 's/$/\/pairs\/datum-tag.csv/'         <<< "$tempins" | xargs cat > "$tempout/pairs/datum-tag.csv"         2> /dev/null
 
 xargs rm -r <<< "$tempins"
 
@@ -1109,7 +1112,7 @@ _gc "$metadir/pairs/datum-hostname.csv"  "$datum_props"
 _gc "$metadir/pairs/datum-guestname.csv" "$datum_props"
 _gc "$metadir/pairs/datum-filepath.csv"  "$datum_props"
 _gc "$metadir/pairs/datum-privacy.csv"   "$datum_props"
-_gc "$metadir/pairs/datum-tag.csv"   "$datum_props"
+_gc "$metadir/pairs/datum-tag.csv"       "$datum_props"
 
 # remove garbage filepath props
 filepath_pairs=$(cat "$metadir/pairs/datum-filepath.csv" | cut -c 66- )
