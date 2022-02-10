@@ -120,7 +120,6 @@ function unescape_json(str) {
     gsub(/\\n/, "\n",  str)
     gsub(/\\r/, "\r",  str)
     gsub(/\\t/, "\t",  str)
-    gsub(/\\v/, "\v",  str)
     gsub(/\\\\/, "\\", str)
 
     return str
@@ -144,7 +143,7 @@ function escape_json(str) {
     gsub(/\n/, "\\n",  str)
     gsub(/\r/, "\\r",  str)
     gsub(/\t/, "\\t",  str)
-    gsub(/\v/, "\\v",  str)
+    gsub(/\v/, "",  str)
 
     return "\42" str "\42"
 }
@@ -617,7 +616,7 @@ function escape_json(str) {
     gsub(/\n/, "\\n",  str)
     gsub(/\r/, "\\r",  str)
     gsub(/\t/, "\\t",  str)
-    gsub(/\v/, "\\v",  str)
+    gsub(/\v/, "",  str)
 
     return "\42" str "\42"
 }
