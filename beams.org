@@ -1196,7 +1196,7 @@ update_file () {
         unchanged_lines=$(mktemp)
         cat "$main/$csvpath" | grep -vf "$changed_uuids" > "$unchanged_lines"
         # remove empty newline in case unchanged_lines is empty
-        cat "$unchanged_lines" <(cat "$new/$csvpath") | sed '/^$/d' > "$main/$csvpath"
+        cat "$unchanged_lines" <(cat "$new/$csvpath" | sort | uniq) | sed '/^$/d' > "$main/$csvpath"
     else
         printf 1>&2 "skip %s\n" "$csvpath"
     fi
@@ -1511,7 +1511,7 @@ END {
 }
 #+end_src
 ** adduuid.awk
-#+begin_src awk
+#+begin_src awk :tangle scripts/adduuid.awk
 BEGIN {}
 /^0 .* INDI/ {
     "uuidgen" | getline uuid
@@ -1529,5 +1529,100 @@ BEGIN {}
     print
 }
 END {}
+#+end_src
+** break-ravdia.awk
+#+begin_src awk :tangle scripts/break-ravdia.awk
+
+# break-ravdia.awk
+#
+# Reads a biorg compilation,
+# write each datum to a file
+# output biorg with file metadata to stdout
+# output path to temporary directory to stderr
+
+function parse_property(line) {
+    gsub("^:", "", line);
+    st = index(line,":");
+    prop_name = substr(line,1,st-1);
+    prop_value = substr(line,st+1);
+    # trim whitespace
+    gsub("^[ \t]+", "", prop_value);
+    gsub("[ \t]+$", "", prop_value);
+
+    return prop_value
+}
+function write_node(temp, props, datum) {
+    # generate uuid
+    datum_uuid_cmd = "uuidgen | sha256sum | cut -c 1-64";
+    datum_uuid_cmd | getline datum_uuid_new;
+    datum_uuid = datum_uuid_new;
+    close(datum_uuid_cmd);
+    # write datum to temp/uuid.txt
+    filepath = temp "/" datum_uuid;
+    printf "%s\n", datum >> filepath;
+    close(filepath);
+    # get file size, type, moddate and hash
+    filesize_cmd = "stat --printf \"%s\" " filepath;
+    filesize_cmd | getline filesize;
+    close(filesize_cmd);
+    filetype_cmd = "file -b " filepath;
+    filetype_cmd | getline filetype;
+    close(filetype_cmd);
+    filehash_cmd = "sha256sum " filepath " | cut -c 1-64";
+    filehash_cmd | getline filehash;
+    close(filehash_cmd);
+    moddate_cmd = "stat --printf=\"%y\" " filepath " | cut -c 1-10";
+    moddate_cmd | getline moddate;
+    close(moddate_cmd);
+    # add file_path to props
+    filepath_prop = ":FILE_PATH: " filepath;
+    filetype_prop = ":FILE_TYPE: " filetype;
+    filesize_prop = ":FILE_SIZE: " filesize;
+    filehash_prop = ":FILE_HASH: " filehash;
+    moddate_prop = ":MOD_DATE: <" moddate ">";
+    uuid_prop = ":UUID: " datum_uuid;
+    props = props filepath_prop RS filetype_prop RS filesize_prop RS filehash_prop RS uuid_prop RS moddate_prop RS;
+    # print new props without datum
+    printf "%s\n", "* .\n:PROPERTIES:\n" props ":END:\n";
+}
+BEGIN {
+    "mktemp -d" | getline temp;
+    system(mkdir_cmd);
+}
+# heading line
+/^\*/ {
+    # write previous node
+    if (node==1) {
+        write_node(temp, props, datum);
+    }
+    # remember to write node on the next heading
+    node=1;
+    # delete previous node's props and datum
+    props="";
+    datum="";
+    next;
+}
+# remember to parse lines as properties
+# while inside the property block
+/^:PROPERTIES:/ {
+    property_block=1; next;
+}
+/^:END:/ {
+    property_block=0; next;
+}
+/^:/ {
+    if (property_block==1) {
+        props = props $0 RS;
+        next;
+    }
+}
+{
+    datum=datum $0 RS;
+}
+END {
+    # write last node
+    write_node(temp, props, datum);
+    printf "%s\n", temp >> "/dev/stderr"
+}
 #+end_src
 * tests
