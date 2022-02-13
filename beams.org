@@ -873,7 +873,8 @@ BEGIN {
     counter=0;
 }
 # heading line
-/^\*/ {
+/^\* \.$/ {
+    afterheading=1
     # write previous node
     if (node==1) {
         write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, filehash, guestname, guestdate, hostname, hostdate, privacy, tag, datum);
@@ -902,89 +903,107 @@ BEGIN {
 # remember to parse lines as properties
 # while inside the property block
 /^:PROPERTIES:/ {
-    property_block=1; next;
+    if (afterheading==1) {
+        property_block=1; next;
+    }
+    afterheading=0;
 }
 /^:END:/ {
+    afterheading=0;
     property_block=0; next;
 }
 /^:UUID:/ {
+    afterheading=0;
     if (property_block==1) {
         datum_uuid = parse_property($0);
         next;
     }
 }
 /^:FILE_PATH:/ {
+    afterheading=0;
     if (property_block==1) {
         filepath = parse_property($0);
         next;
     }
 }
 /^:FILE_SIZE:/ {
+    afterheading=0;
     if (property_block==1) {
         filesize = parse_property($0);
         next;
     }
 }
 /^:FILE_TYPE:/ {
+    afterheading=0;
     if (property_block==1) {
         filetype = parse_property($0);
         next;
     }
 }
 /^:MOD_DATE:/ {
+    afterheading=0;
     if (property_block==1) {
         moddate = trim_timestamp(parse_property($0));
         next;
     }
 }
 /^:FILE_HASH:/ {
+    afterheading=0;
     if (property_block==1) {
         filehash = parse_property($0);
         next;
     }
 }
 /^:GUEST_NAME:/ {
+    afterheading=0;
     if (property_block==1) {
         guestname = parse_property($0);
         next;
     }
 }
 /^:GUEST_DATE:/ {
+    afterheading=0;
     if (property_block==1) {
         guestdate = trim_timestamp(parse_property($0));
         next;
     }
 }
 /^:HOST_NAME:/ {
+    afterheading=0;
     if (property_block==1) {
         hostname = parse_property($0);
         next;
     }
 }
 /^:HOST_DATE:/ {
+    afterheading=0;
     if (property_block==1) {
         hostdate = trim_timestamp(parse_property($0));
         next;
     }
 }
 /^:PRIVACY:/ {
+    afterheading=0;
     if (property_block==1) {
         privacy = parse_property($0);
         next;
     }
 }
 /^:TAG:/ {
+    afterheading=0;
     if (property_block==1) {
         tag = parse_property($0);
         next;
     }
 }
 /^:/ {
+    afterheading=0;
     if (property_block==1) {
         next;
     }
 }
 {
+    afterheading=0
     datum=datum $0 RS;
 }
 END {
@@ -1322,7 +1341,7 @@ update_file "$new" "$main" "$uuid" "props/tag/index.csv"
 ** merge-gedcom.awk
 #+begin_src awk :tangle scripts/merge-gedcom.awk
 
-# break-biorg.awk
+# merge-gedcom.awk
 #
 # Merge gedcom files
 # structures must have _UID tags
@@ -1590,7 +1609,8 @@ BEGIN {
     system(mkdir_cmd);
 }
 # heading line
-/^\*/ {
+/^\* \.$/ {
+    afterheading=1
     # write previous node
     if (node==1) {
         write_node(temp, props, datum);
@@ -1605,18 +1625,24 @@ BEGIN {
 # remember to parse lines as properties
 # while inside the property block
 /^:PROPERTIES:/ {
-    property_block=1; next;
+    if (afterheading==1) {
+        property_block=1; next;
+    }
+    afterheading=0;
 }
 /^:END:/ {
+    afterheading=0;
     property_block=0; next;
 }
 /^:/ {
+    afterheading=0;
     if (property_block==1) {
         props = props $0 RS;
         next;
     }
 }
 {
+    afterheading=0;
     datum=datum $0 RS;
 }
 END {
