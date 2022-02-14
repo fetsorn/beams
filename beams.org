@@ -1649,7 +1649,9 @@ BEGIN {
 }
 END {
     # write last node
-    write_node(temp, props, datum);
+    if (node==1) {
+        write_node(temp, props, datum);
+    }
     printf "%s\n", temp >> "/dev/stderr"
 }
 #+end_src
