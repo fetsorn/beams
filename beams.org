@@ -151,6 +151,16 @@ function escape_json(str) {
     printf "%s", escape_json($0)
 }
 #+end_src
+** escape
+#+begin_src sh :tangle scripts/escape :tangle-mode (identity #o755)
+#!/bin/bash
+cat <&0 | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
+#+end_src
+** unescape
+#+begin_src sh :tangle scripts/unescape :tangle-mode (identity #o755)
+#!/bin/bash
+cat <&0 | python3 -c 'import json,sys; print(json.loads(sys.stdin.read()))'
+#+end_src
 ** build-biorg
 #+begin_src sh :tangle scripts/build-biorg :tangle-mode (identity #o755)
 #!/bin/bash
@@ -205,7 +215,7 @@ build_biorg () {
     filepath_uuid=$(bash scripts/lookup "metadir/pairs/datum-filepath.csv" "$datum_uuid")
     if [ "$filepath_uuid" ]; then
         filepath_escaped=$(bash scripts/lookup "metadir/props/filepath/index.csv" "$filepath_uuid")
-        filepath=$(printf "%s" "$filepath_escaped" | awk -f scripts/unescape.awk)
+        filepath=$(printf "%s" "$filepath_escaped" | bash scripts/unescape)
         printf ":FILE_PATH: %s\n" "$filepath"
 
         filesize_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filesize.csv" "$filepath_uuid")
@@ -217,7 +227,7 @@ build_biorg () {
         filetype_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filetype.csv" "$filepath_uuid")
         if [ "$filetype_uuid" ]; then
             filetype_escaped=$(bash scripts/lookup "metadir/props/filetype/index.csv" "$filetype_uuid")
-            filetype=$(printf "%s" "$filetype_escaped" | awk -f scripts/unescape.awk)
+            filetype=$(printf "%s" "$filetype_escaped" | bash scripts/unescape)
             printf ":FILE_TYPE: %s\n" "$filetype"
         fi
 
@@ -236,7 +246,7 @@ build_biorg () {
     printf ":END:\n"
 
     datum_escaped=$(printf "%s" "$line" | cut -c 66-)
-    datum=$(printf "%s" "$datum_escaped" | awk -f scripts/unescape.awk)
+    datum=$(printf "%s" "$datum_escaped" | bash scripts/unescape)
     printf "%s\n" "$datum"
 
     printf 1>&2 "                build: %-6s parts\r" "$counter"
