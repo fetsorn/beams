@@ -1008,7 +1008,9 @@ BEGIN {
 }
 END {
     # write last node
-    write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, filehash, guestname, guestdate, hostname, hostdate, privacy, tag, datum);
+    if (node==1) {
+        write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, filehash, guestname, guestdate, hostname, hostdate, privacy, tag, datum);
+    }
     printf "%s\n", temp;
 }
 #+end_src
