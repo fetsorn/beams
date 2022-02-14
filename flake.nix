@@ -1,7 +1,11 @@
 {
   description = "scripts for metadir";
 
-  inputs = { nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable"; };
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+    gojq.url = "github:itchyny/gojq";
+    gojq.flake = false;
+  };
 
   outputs = inputs@{ self, nixpkgs, ... }:
     let
@@ -53,6 +57,11 @@
           pkgs.writeShellScriptBin "puma" (builtins.readFile "${beams}/puma");
         lookup = pkgs.writeShellScriptBin "lookup"
           (builtins.readFile "${beams}/lookup");
+        gojq = pkgs.buildGoModule {
+          src = inputs.gojq;
+          name = "gojq";
+          vendorSha256 = "sha256-1wN1nMpvkkrKISuI9tCxX8nL73TQr9snHS9A1UWCArQ=";
+        };
       in rec {
         devShell = pkgs.mkShell {
           buildInputs = [
@@ -62,6 +71,7 @@
             pkgs.parallel
             pkgs.file
             pkgs.moreutils
+            gojq
           ];
         };
         packages = { inherit beams puma lookup; };

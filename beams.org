@@ -159,8 +159,11 @@ cat <&0 | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
 ** unescape
 #+begin_src sh :tangle scripts/unescape :tangle-mode (identity #o755)
 #!/bin/bash
+# unescape.awk breaks on "path\\new", interprets "\n"
+# python breaks and bloats
 # cat <&0 | python3 -c 'import json,sys; print(json.loads(sys.stdin.read()))'
-cat <&0 | jq -r
+# jq corrupts cyrillic characters
+cat <&0 | gojq -r
 #+end_src
 ** build-biorg
 #+begin_src sh :tangle scripts/build-biorg :tangle-mode (identity #o755)
