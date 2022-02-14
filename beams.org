@@ -1060,25 +1060,25 @@ mkdir -p "$tempout/props/filepath" \
          "$tempout/pairs"
 
 # suppress stderr in case no directory is found in tempins
-sed 's/$/\/props\/filepath\/index.csv/'   <<< "$tempins" | xargs cat > "$tempout/props/filepath/index.csv"    2> /dev/null
-sed 's/$/\/props\/filesize\/index.csv/'   <<< "$tempins" | xargs cat > "$tempout/props/filesize/index.csv"    2> /dev/null
-sed 's/$/\/props\/filetype\/index.csv/'   <<< "$tempins" | xargs cat > "$tempout/props/filetype/index.csv"    2> /dev/null
-sed 's/$/\/props\/date\/index.csv/'       <<< "$tempins" | xargs cat > "$tempout/props/date/index.csv"        2> /dev/null
-sed 's/$/\/props\/datum\/index.csv/'      <<< "$tempins" | xargs cat > "$tempout/props/datum/index.csv"       2> /dev/null
-sed 's/$/\/props\/name\/index.csv/'       <<< "$tempins" | xargs cat > "$tempout/props/name/index.csv"        2> /dev/null
-sed 's/$/\/props\/privacy\/index.csv/'    <<< "$tempins" | xargs cat > "$tempout/props/privacy/index.csv"     2> /dev/null
-sed 's/$/\/props\/tag\/index.csv/'    <<< "$tempins" | xargs cat > "$tempout/props/tag/index.csv"     2> /dev/null
-sed 's/$/\/pairs\/filepath-filesize.csv/' <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-filesize.csv" 2> /dev/null
-sed 's/$/\/pairs\/filepath-filetype.csv/' <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-filetype.csv" 2> /dev/null
-sed 's/$/\/pairs\/filepath-moddate.csv/'  <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-moddate.csv"  2> /dev/null
-sed 's/$/\/pairs\/filepath-filehash.csv/' <<< "$tempins" | xargs cat > "$tempout/pairs/filepath-filehash.csv" 2> /dev/null
-sed 's/$/\/pairs\/datum-filepath.csv/'    <<< "$tempins" | xargs cat > "$tempout/pairs/datum-filepath.csv"    2> /dev/null
-sed 's/$/\/pairs\/datum-hostname.csv/'    <<< "$tempins" | xargs cat > "$tempout/pairs/datum-hostname.csv"    2> /dev/null
-sed 's/$/\/pairs\/datum-hostdate.csv/'    <<< "$tempins" | xargs cat > "$tempout/pairs/datum-hostdate.csv"    2> /dev/null
-sed 's/$/\/pairs\/datum-guestname.csv/'   <<< "$tempins" | xargs cat > "$tempout/pairs/datum-guestname.csv"   2> /dev/null
-sed 's/$/\/pairs\/datum-guestdate.csv/'   <<< "$tempins" | xargs cat > "$tempout/pairs/datum-guestdate.csv"   2> /dev/null
-sed 's/$/\/pairs\/datum-privacy.csv/'     <<< "$tempins" | xargs cat > "$tempout/pairs/datum-privacy.csv"     2> /dev/null
-sed 's/$/\/pairs\/datum-tag.csv/'         <<< "$tempins" | xargs cat > "$tempout/pairs/datum-tag.csv"         2> /dev/null
+sed 's/$/\/props\/filepath\/index.csv/'   <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/props/filepath/index.csv"
+sed 's/$/\/props\/filesize\/index.csv/'   <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/props/filesize/index.csv"
+sed 's/$/\/props\/filetype\/index.csv/'   <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/props/filetype/index.csv"
+sed 's/$/\/props\/date\/index.csv/'       <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/props/date/index.csv"
+sed 's/$/\/props\/datum\/index.csv/'      <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/props/datum/index.csv"
+sed 's/$/\/props\/name\/index.csv/'       <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/props/name/index.csv"
+sed 's/$/\/props\/privacy\/index.csv/'    <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/props/privacy/index.csv"
+sed 's/$/\/props\/tag\/index.csv/'        <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/props/tag/index.csv"
+sed 's/$/\/pairs\/filepath-filesize.csv/' <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/filepath-filesize.csv"
+sed 's/$/\/pairs\/filepath-filetype.csv/' <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/filepath-filetype.csv"
+sed 's/$/\/pairs\/filepath-moddate.csv/'  <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/filepath-moddate.csv"
+sed 's/$/\/pairs\/filepath-filehash.csv/' <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/filepath-filehash.csv"
+sed 's/$/\/pairs\/datum-filepath.csv/'    <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/datum-filepath.csv"
+sed 's/$/\/pairs\/datum-hostname.csv/'    <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/datum-hostname.csv"
+sed 's/$/\/pairs\/datum-hostdate.csv/'    <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/datum-hostdate.csv"
+sed 's/$/\/pairs\/datum-guestname.csv/'   <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/datum-guestname.csv"
+sed 's/$/\/pairs\/datum-guestdate.csv/'   <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/datum-guestdate.csv"
+sed 's/$/\/pairs\/datum-privacy.csv/'     <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/datum-privacy.csv"
+sed 's/$/\/pairs\/datum-tag.csv/'         <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/datum-tag.csv"
 
 xargs rm -r <<< "$tempins"
 
@@ -1650,5 +1650,9 @@ END {
     write_node(temp, props, datum);
     printf "%s\n", temp >> "/dev/stderr"
 }
+#+end_src
+** init-metadir
+#+begin_src sh :tangle scripts/init-metadir :tangle-mode (identity #o755)
+mkdir -p metadir/pairs metadir/props/{tag,date,datum,filesize,filetype,name,rulepath}
 #+end_src
 * tests
