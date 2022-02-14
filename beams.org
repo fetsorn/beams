@@ -219,6 +219,12 @@ build_biorg () {
         printf ":GUEST_DATE: <%s>\n" "$guestdate"
     fi
 
+    tag_uuid=$(bash scripts/lookup "metadir/pairs/datum-tag.csv" "$datum_uuid")
+    if [ "$tag_uuid" ]; then
+        tag=$(bash scripts/lookup "metadir/props/tag/index.csv" "$tag_uuid")
+        printf ":TAG: %s\n" "$tag"
+    fi
+
     filepath_uuid=$(bash scripts/lookup "metadir/pairs/datum-filepath.csv" "$datum_uuid")
     if [ "$filepath_uuid" ]; then
         filepath_escaped=$(bash scripts/lookup "metadir/props/filepath/index.csv" "$filepath_uuid")
