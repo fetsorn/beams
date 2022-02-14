@@ -172,50 +172,87 @@ build_biorg () {
     line="$1"
     counter="$2"
 
-    datum_uuid=$(printf "%s" "$line" | cut -c 1-64)
-    datum_escaped=$(printf "%s" "$line" | cut -c 66-)
-    datum=$(printf "%s" "$datum_escaped" | awk -f scripts/unescape.awk)
-
-    filepath_uuid=$(bash scripts/lookup "metadir/pairs/datum-filepath.csv" "$datum_uuid")
-    filepath_escaped=$(bash scripts/lookup "metadir/props/filepath/index.csv" "$filepath_uuid")
-    filepath=$(printf "%s" "$filepath_escaped" | awk -f scripts/unescape.awk)
-
-    filesize_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filesize.csv" "$filepath_uuid")
-    filesize=$(bash scripts/lookup "metadir/props/filesize/index.csv" "$filesize_uuid")
-
-    filetype_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filetype.csv" "$filepath_uuid")
-    filetype_escaped=$(bash scripts/lookup "metadir/props/filetype/index.csv" "$filetype_uuid")
-    filetype=$(printf "%s" "$filetype_escaped" | awk -f scripts/unescape.awk)
-
-    moddate_uuid=$(bash scripts/lookup "metadir/pairs/filepath-moddate.csv" "$filepath_uuid")
-    moddate=$(bash scripts/lookup "metadir/props/date/index.csv" "$moddate_uuid")
-
-    filehash=$(bash scripts/lookup "metadir/pairs/filepath-filehash.csv" "$filepath_uuid")
-
     printf "* .\n"
     printf ":PROPERTIES:\n"
+
+    datum_uuid=$(printf "%s" "$line" | cut -c 1-64)
     printf ":UUID: %s\n" "$datum_uuid"
-    printf ":FILE_PATH: %s\n" "$filepath"
-    printf ":FILE_SIZE: %s\n" "$filesize"
-    printf ":FILE_TYPE: %s\n" "$filetype"
-    printf ":FILE_HASH: %s\n" "$filehash"
-    printf ":MOD_DATE: <%s>\n" "$moddate"
+
+    hostname_uuid=$(bash scripts/lookup "metadir/pairs/datum-hostname.csv" "$datum_uuid")
+    if [ "$hostname_uuid" ]; then
+        hostname=$(bash scripts/lookup "metadir/props/name/index.csv" "$hostname_uuid")
+        printf ":HOST_NAME: %s\n" "$hostname"
+    fi
+
+    hostdate_uuid=$(bash scripts/lookup "metadir/pairs/datum-hostdate.csv" "$datum_uuid")
+    if [ "$hostdate_uuid" ]; then
+        hostdate=$(bash scripts/lookup "metadir/props/date/index.csv" "$hostdate_uuid")
+        printf ":HOST_DATE: <%s>\n" "$hostdate"
+    fi
+
+    guestname_uuid=$(bash scripts/lookup "metadir/pairs/datum-guestname.csv" "$datum_uuid")
+    if [ "$guestname_uuid" ]; then
+        guestname=$(bash scripts/lookup "metadir/props/name/index.csv" "$guestname_uuid")
+        printf ":GUEST_NAME: %s\n" "$guestname"
+    fi
+
+    guestdate_uuid=$(bash scripts/lookup "metadir/pairs/datum-guestdate.csv" "$datum_uuid")
+    if [ "$guestdate_uuid" ]; then
+        guestdate=$(bash scripts/lookup "metadir/props/date/index.csv" "$guestdate_uuid")
+        printf ":GUEST_DATE: <%s>\n" "$guestdate"
+    fi
+
+    filepath_uuid=$(bash scripts/lookup "metadir/pairs/datum-filepath.csv" "$datum_uuid")
+    if [ "$filepath_uuid" ]; then
+        filepath_escaped=$(bash scripts/lookup "metadir/props/filepath/index.csv" "$filepath_uuid")
+        filepath=$(printf "%s" "$filepath_escaped" | awk -f scripts/unescape.awk)
+        printf ":FILE_PATH: %s\n" "$filepath"
+
+        filesize_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filesize.csv" "$filepath_uuid")
+        if [ "$filesize_uuid" ]; then
+            filesize=$(bash scripts/lookup "metadir/props/filesize/index.csv" "$filesize_uuid")
+            printf ":FILE_SIZE: %s\n" "$filesize"
+        fi
+
+        filetype_uuid=$(bash scripts/lookup "metadir/pairs/filepath-filetype.csv" "$filepath_uuid")
+        if [ "$filetype_uuid" ]; then
+            filetype_escaped=$(bash scripts/lookup "metadir/props/filetype/index.csv" "$filetype_uuid")
+            filetype=$(printf "%s" "$filetype_escaped" | awk -f scripts/unescape.awk)
+            printf ":FILE_TYPE: %s\n" "$filetype"
+        fi
+
+        moddate_uuid=$(bash scripts/lookup "metadir/pairs/filepath-moddate.csv" "$filepath_uuid")
+        if [ "$moddate_uuid" ]; then
+            moddate=$(bash scripts/lookup "metadir/props/date/index.csv" "$moddate_uuid")
+            printf ":MOD_DATE: <%s>\n" "$moddate"
+        fi
+
+        filehash=$(bash scripts/lookup "metadir/pairs/filepath-filehash.csv" "$filepath_uuid")
+        if [ "$filehash" ]; then
+            printf ":FILE_HASH: %s\n" "$filehash"
+        fi
+    fi
+
     printf ":END:\n"
+
+    datum_escaped=$(printf "%s" "$line" | cut -c 66-)
+    datum=$(printf "%s" "$datum_escaped" | awk -f scripts/unescape.awk)
     printf "%s\n" "$datum"
+
     printf 1>&2 "                build: %-6s parts\r" "$counter"
 }
 
 export -f build_biorg
 
-build_batch () {
-    counter="$1"
-    while read -r line; do
-        build_biorg "$line" "$counter"
-        printf 1>&2 "                build: %-6s parts\r" "$counter"
-    done
-}
+# build_batch () {
+#     counter="$1"
+#     while read -r line; do
+#         build_biorg "$line" "$counter"
+#         printf 1>&2 "                build: %-6s parts\r" "$counter"
+#     done
+# }
 
-export -f build_batch
+# export -f build_batch
 
 # temp=$(mktemp)
 # cat <&0 > "$temp"
