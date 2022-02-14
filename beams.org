@@ -160,10 +160,13 @@ cat <&0 | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
 #+begin_src sh :tangle scripts/unescape :tangle-mode (identity #o755)
 #!/bin/bash
 # unescape.awk breaks on "path\\new", interprets "\n"
+# cat <&0 | awk -f scripts/unescape.awk
 # python breaks and bloats
 # cat <&0 | python3 -c 'import json,sys; print(json.loads(sys.stdin.read()))'
-# jq corrupts cyrillic characters
-cat <&0 | gojq -r
+# jq corrupts cyrillic characters when locale is not set right
+cat <&0 | jq -r
+# gojq doesn't make a difference
+# cat <&0 | gojq -r
 #+end_src
 ** build-biorg
 #+begin_src sh :tangle scripts/build-biorg :tangle-mode (identity #o755)
@@ -1709,5 +1712,33 @@ END {
 ** init-metadir
 #+begin_src sh :tangle scripts/init-metadir :tangle-mode (identity #o755)
 mkdir -p metadir/pairs metadir/props/{tag,date,datum,filesize,filetype,name,rulepath}
+#+end_src
+** sync
+#+begin_src sh :tangle scripts/sync :tangle-mode (identity #o755)
+
+if [ $# -ne 2 ]; then
+  printf 1>&2 "%s\n" "Usage: $0 INBOX MAIN
+
+  Syncs metadir MAIN with a INBOX biorg file
+
+  EXAMPLE:
+    $0 ./inbox.bi.org ./metadir"
+  exit 3
+fi
+
+inbox="$1"
+main="$2"
+
+# break biorg
+new=$(cat "$inbox" | bash scripts/break-biorg)
+printf 2>&1 "%s\n" "$new"
+# merge metadir
+bash scripts/merge "$new" "$main"
+# backup biorg
+bk=$(mktemp)
+cp "$inbox" "$bk"
+ln -sf "$bk" sync-bk
+# rebuild biorg
+cat "$main/props/datum/index.csv" | bash scripts/build-biorg > "$inbox"
 #+end_src
 * tests
