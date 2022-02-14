@@ -1745,6 +1745,6 @@ bk=$(mktemp)
 cp "$inbox" "$bk"
 ln -sf "$bk" sync-bk
 # rebuild biorg
-cat "$main/props/datum/index.csv" | bash scripts/build-biorg > "$inbox"
+cat "$new/props/datum/index.csv" | bash scripts/build-biorg > "$inbox"
 #+end_src
 * tests
