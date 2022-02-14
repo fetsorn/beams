@@ -159,7 +159,8 @@ cat <&0 | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
 ** unescape
 #+begin_src sh :tangle scripts/unescape :tangle-mode (identity #o755)
 #!/bin/bash
-cat <&0 | python3 -c 'import json,sys; print(json.loads(sys.stdin.read()))'
+# cat <&0 | python3 -c 'import json,sys; print(json.loads(sys.stdin.read()))'
+cat <&0 | jq -r
 #+end_src
 ** build-biorg
 #+begin_src sh :tangle scripts/build-biorg :tangle-mode (identity #o755)
