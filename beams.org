@@ -1748,3 +1748,34 @@ ln -sf "$bk" sync-bk
 cat "$new/props/datum/index.csv" | bash scripts/build-biorg > "$inbox"
 #+end_src
 * tests
+#+begin_src sh :tangle tests/test_lookup :tangle-mode (identity #o755)
+script="/Users/fetsorn/mm/0---codes/0-beams/scripts/lookup"
+uuid1="8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704"
+value1="value1"
+
+setup() {
+  rm -f /tmp/tests-index
+}
+code() {
+    printf "%s,%s" "$uuid1" "$value1" > /tmp/tests-index
+}
+
+test_lookup_fails_without_args() {
+    assert_fail scripts/lookup
+}
+test_lookup_fails_with_one_arg() {
+    assert_fail scripts/lookup $(mktemp)
+}
+test_lookup_succeeds_with_two_args() {
+    code
+    assert "$script /tmp/tests-index $uuid1" "should succeed"
+}
+test_lookup_prints_value() {
+    code
+    assert_equals "$value1" $($script /tmp/tests-index $uuid1) "should equal value1"
+}
+
+teardown_suite() {
+  rm -f /tmp/tests-index
+}
+#+end_src

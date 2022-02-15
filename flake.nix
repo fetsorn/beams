@@ -40,13 +40,14 @@
             pkgs.moreutils
           ];
           buildPhase = ''
-            mkdir scripts
+            mkdir scripts tests
             ${pkgs.emacs}/bin/emacs --batch --eval "(require 'org)" --eval '(org-babel-tangle-file "beams.org")'
           '';
           installPhase = ''
-            mkdir -p $out/bin/
-            cp scripts/* $out/bin/
-            chmod +x $out/bin/*
+            # mkdir -p $out/bin/
+            # cp scripts/* $out/bin/
+            # chmod +x $out/bin/*
+            touch $out
           '';
         };
         puma =
@@ -62,8 +63,12 @@
             pkgs.parallel
             pkgs.file
             pkgs.moreutils
+            pkgs.bash_unit
           ];
         };
+        shellHook = ''
+          mkdir -p scripts tests
+        '';
         packages = { inherit beams puma lookup; };
         defaultPackage = beams;
       });

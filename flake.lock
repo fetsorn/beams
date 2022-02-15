@@ -1,21 +1,5 @@
 {
   "nodes": {
-    "gojq": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1644811368,
-        "narHash": "sha256-EHS4gJdpGSxdwkHn5c+JkdjVjczXOY4vUFBQR1+9whk=",
-        "owner": "itchyny",
-        "repo": "gojq",
-        "rev": "591872ce9375f541dbc088398c518ee2ba589c9b",
-        "type": "github"
-      },
-      "original": {
-        "owner": "itchyny",
-        "repo": "gojq",
-        "type": "github"
-      }
-    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1643119265,
@@ -34,7 +18,6 @@
     },
     "root": {
       "inputs": {
-        "gojq": "gojq",
         "nixpkgs": "nixpkgs"
       }
     }
