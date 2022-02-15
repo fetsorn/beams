@@ -143,26 +143,40 @@ cat <&0 | jq -r
 #+begin_src sh :tangle scripts/build-biorg :tangle-mode (identity #o755)
 #!/bin/bash
 
-# list of datum_uuid,datum | build-biorg | biorg compilation
-
-# TODO make short options instead of positional arguments
-if [ $# -gt 3 ]; then
+usage () {
   printf 1>&2 "%s\n" "Usage: $0 [METADIR] [CONFIG] [PROPS]
 
   Reads a stream of datum_uuid,datum pairs from stdin
-  looks up PROPS in METADIR (all properties in \$PWD/metadir by default)
+  looks up PROPS in METADIR (all properties in  by default)
   outputs biorg
 
+  OPTIONS:
+  -c json file which contains the schema of properties and relations between them
+     defaults to \$PWD/metadir.json
+  -d folder which contains the index of properties and relations between them
+     defaults to \$PWD/metadir
+  -p list of all property names as a space-separated string
+     defaults to all property names in the CONFIG
+
   EXAMPLE:
-    cat metadir/props/datum/index.csv | $0 metadir > ../ops/index.bi.org"
-  exit 3
-fi
+    cat metadir/props/datum/index.csv | cut -c 1-64 | $0 -d metadir -c config.json -p \"hostdate hostname\" > ../ops/index.bi.org"
+}
+
+OPTIND=1
+while getopts 'd:c:p:' opt; do
+  case $opt in
+    d) metadir="$OPTARG" ;;
+    c) config="$OPTARG" ;;
+    p) config_props="$OPTARG" ;;
+    ,*) usage
+       exit 1
+  esac
+done
+shift "$(( OPTIND - 1 ))"
 
 # get the path to the folder which contains
 # the index of properties and relations between them
-if [ "$1" ]; then
-    metadir="$1"
-else
+if [ ! "$metadir" ]; then
     metadir="$PWD/metadir"
 fi
 
@@ -174,9 +188,7 @@ fi
 
 # get the path to the json file which contains
 # the schema of properties and relations between them
-if [ "$2" ]; then
-    config="$2"
-else
+if [ ! "$config" ]; then
     config="$PWD/metadir.json"
 fi
 
@@ -187,9 +199,7 @@ if [[ ! -f "$config" ]]; then
 fi
 
 # get the list of all property names as a space-separated string
-if [ "$3" ]; then
-    config_props="$3"
-else
+if [ "$config_props" ]; then
     config_props=$(jq -r 'keys | join(" ")' "$config")
 fi
 
@@ -380,9 +390,6 @@ fi
 # with a counter and a carriage return
 printf 1>&2 "\n"
 #+end_src
-
-#+RESULTS:
-
 ** build-biorg notes
 inconsistent corruption bugs accompany build-biorg
 some are fixed by mktemp
