@@ -169,6 +169,76 @@ if [[ ! -d "$metadir" ]]; then
   exit 3
 fi
 
+# locate other scripts
+DIR="${BASH_SOURCE%/*}"
+if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
+
+# tbn ROOT ROOT_UUID PROP
+# tbn "datum" "12401595" "hostname"
+# prints data
+# sets two variables, ${PROP} and ${PROP}_uuid
+tbn () {
+    # TODO get root from config
+    local root="$1"
+    local root_uuid="$2"
+    local prop="$3"
+
+    # variables to set on return
+    declare -n VALUE="$prop"
+    declare -n UUID="${prop}_uuid"
+
+    local pair="$metadir/pairs/$root-$prop.csv"
+
+    # override common prop dirs like name/ and date/
+    # TODO get override switch and propdir value from config
+    local propdir=""
+    if [ "$prop" == "hostdate" ] || [ "$prop" == "guestdate" ] || [ "$prop" == "moddate" ]; then
+        propdir="date"
+    elif [ "$prop" == "hostname" ] || [ "$prop" == "guestname" ]; then
+        propdir="name"
+    else
+        propdir="$prop"
+    fi
+
+    local prop_value=""
+
+    # treat root prop differently
+    # TODO get and root status, unescape and print switches from config
+    if [ "$prop" == "datum" ]; then
+        prop_uuid="$root_uuid"
+        prop_value=$(bash "$DIR/lookup" "$metadir/props/$propdir/index.csv" "$prop_uuid")
+        prop_value=$(printf "%s" "$prop_value" | bash "$DIR/unescape")
+        VALUE="$prop_value"
+        UUID="$prop_uuid"
+        printf "%s\n" "$datum"
+        return 0
+    fi
+
+    if [ -f "$pair" ]; then
+        local prop_uuid=$(bash "$DIR/lookup" "$pair" "$root_uuid")
+        if [ "$prop_uuid" ]; then
+            prop_value=$(bash "$DIR/lookup" "$metadir/props/$propdir/index.csv" "$prop_uuid")
+            # optionally unescape
+            # TODO get unescape switch from config
+            if [ "$prop" == "filetype" ]; then
+                prop_value=$(printf "%s" "$prop_value" | bash "$DIR/unescape")
+            fi
+            # optionally wrap dates in brackets
+            # TODO get wrap switch from config
+            VALUE="$prop_value"
+            UUID="$prop_uuid"
+            if [ "$prop" == "hostdate" ] || [ "$prop" == "guestdate" ] || [ "$prop" == "moddate" ]; then
+                printf ":$prop: <%s>\n" "$prop_value"
+            else
+                printf ":$prop: %s\n" "$prop_value"
+            fi
+            return 0
+        fi
+    fi
+
+}
+export -f tbn
+
 build_biorg () {
     stdin_uuid="$1"
     counter="$2"
@@ -176,6 +246,7 @@ build_biorg () {
     printf 1>&2 "                build: %-6s parts\r" "$counter"
 
     # skip if requested uuid is not in metadir
+    # TODO get root prop and dir from config
     datum_uuid=$(grep -o "$stdin_uuid" "$metadir/props/datum/index.csv")
     if [ ! "$datum_uuid" ]; then
         return
@@ -186,88 +257,29 @@ build_biorg () {
 
     printf ":UUID: %s\n" "$datum_uuid"
 
-    # locate other scripts
-    DIR="${BASH_SOURCE%/*}"
-    if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
+    # TODO get props from config
+    tbn "datum" "$datum_uuid" "hostname"
 
-    if [ -f "$metadir/pairs/datum-hostname.csv" ]; then
-        hostname_uuid=$(bash "$DIR/lookup" "$metadir/pairs/datum-hostname.csv" "$datum_uuid")
-        if [ "$hostname_uuid" ]; then
-            hostname=$(bash "$DIR/lookup" "$metadir/props/name/index.csv" "$hostname_uuid")
-            printf ":HOST_NAME: %s\n" "$hostname"
-        fi
-    fi
+    tbn "datum" "$datum_uuid" "hostdate"
 
-    if [ -f "$metadir/pairs/datum-hostdate.csv" ]; then
-        hostdate_uuid=$(bash "$DIR/lookup" "$metadir/pairs/datum-hostdate.csv" "$datum_uuid")
-        if [ "$hostdate_uuid" ]; then
-            hostdate=$(bash "$DIR/lookup" "$metadir/props/date/index.csv" "$hostdate_uuid")
-            printf ":HOST_DATE: <%s>\n" "$hostdate"
-        fi
-    fi
+    tbn "datum" "$datum_uuid" "guestname"
 
-    if [ -f "$metadir/pairs/datum-guestname.csv" ]; then
-        guestname_uuid=$(bash "$DIR/lookup" "$metadir/pairs/datum-guestname.csv" "$datum_uuid")
-        if [ "$guestname_uuid" ]; then
-            guestname=$(bash "$DIR/lookup" "$metadir/props/name/index.csv" "$guestname_uuid")
-            printf ":GUEST_NAME: %s\n" "$guestname"
-        fi
-    fi
+    tbn "datum" "$datum_uuid" "guestdate"
 
-    if [ -f "$metadir/pairs/datum-guestdate.csv" ]; then
-        guestdate_uuid=$(bash "$DIR/lookup" "$metadir/pairs/datum-guestdate.csv" "$datum_uuid")
-        if [ "$guestdate_uuid" ]; then
-            guestdate=$(bash "$DIR/lookup" "$metadir/props/date/index.csv" "$guestdate_uuid")
-            printf ":GUEST_DATE: <%s>\n" "$guestdate"
-        fi
-    fi
+    tbn "datum" "$datum_uuid" "tag"
 
-    if [ -f "$metadir/pairs/datum-tag.csv" ]; then
-        tag_uuid=$(bash "$DIR/lookup" "$metadir/pairs/datum-tag.csv" "$datum_uuid")
-        if [ "$tag_uuid" ]; then
-            tag=$(bash "$DIR/lookup" "$metadir/props/tag/index.csv" "$tag_uuid")
-            printf ":TAG: %s\n" "$tag"
-        fi
-    fi
+    tbn "datum" "$datum_uuid" "filepath"
+    if [ "$filepath" ]; then
+        tbn "filepath" "$filepath_uuid" "filesize"
 
-    if [ -f "$metadir/pairs/datum-filepath.csv" ]; then
-        filepath_uuid=$(bash "$DIR/lookup" "$metadir/pairs/datum-filepath.csv" "$datum_uuid")
-        if [ "$filepath_uuid" ]; then
-            filepath_escaped=$(bash "$DIR/lookup" "$metadir/props/filepath/index.csv" "$filepath_uuid")
-            filepath=$(printf "%s" "$filepath_escaped" | bash "$DIR/unescape")
-            printf ":FILE_PATH: %s\n" "$filepath"
+        tbn "filepath" "$filepath_uuid" "filetype"
 
-            filesize_uuid=$(bash "$DIR/lookup" "$metadir/pairs/filepath-filesize.csv" "$filepath_uuid")
-            if [ "$filesize_uuid" ]; then
-                filesize=$(bash "$DIR/lookup" "$metadir/props/filesize/index.csv" "$filesize_uuid")
-                printf ":FILE_SIZE: %s\n" "$filesize"
-            fi
-
-            filetype_uuid=$(bash "$DIR/lookup" "$metadir/pairs/filepath-filetype.csv" "$filepath_uuid")
-            if [ "$filetype_uuid" ]; then
-                filetype_escaped=$(bash "$DIR/lookup" "$metadir/props/filetype/index.csv" "$filetype_uuid")
-                filetype=$(printf "%s" "$filetype_escaped" | bash "$DIR/unescape")
-                printf ":FILE_TYPE: %s\n" "$filetype"
-            fi
-
-            moddate_uuid=$(bash "$DIR/lookup" "$metadir/pairs/filepath-moddate.csv" "$filepath_uuid")
-            if [ "$moddate_uuid" ]; then
-                moddate=$(bash "$DIR/lookup" "$metadir/props/date/index.csv" "$moddate_uuid")
-                printf ":MOD_DATE: <%s>\n" "$moddate"
-            fi
-
-            filehash=$(bash "$DIR/lookup" "$metadir/pairs/filepath-filehash.csv" "$filepath_uuid")
-            if [ "$filehash" ]; then
-                printf ":FILE_HASH: %s\n" "$filehash"
-            fi
-        fi
+        tbn "filepath" "$filepath_uuid" "moddate"
     fi
 
     printf ":END:\n"
 
-    datum_escaped=$(bash "$DIR/lookup" "$metadir/props/datum/index.csv" "$datum_uuid")
-    datum=$(printf "%s" "$datum_escaped" | bash "$DIR/unescape")
-    printf "%s\n" "$datum"
+    tbn "datum" "$datum_uuid" "datum"
 }
 
 export -f build_biorg
