@@ -145,11 +145,12 @@ cat <&0 | jq -r
 
 # list of datum_uuid,datum | build-biorg | biorg compilation
 
-if [ $# -gt 2 ]; then
-  printf 1>&2 "%s\n" "Usage: $0 [METADIR] [PROPS]
+# TODO make short options instead of positional arguments
+if [ $# -gt 3 ]; then
+  printf 1>&2 "%s\n" "Usage: $0 [METADIR] [CONFIG] [PROPS]
 
   Reads a stream of datum_uuid,datum pairs from stdin
-  looks up PROPS in METADIR (all props \$PWD/metadir by default)
+  looks up PROPS in METADIR (all properties in \$PWD/metadir by default)
   outputs biorg
 
   EXAMPLE:
@@ -157,6 +158,8 @@ if [ $# -gt 2 ]; then
   exit 3
 fi
 
+# get the path to the folder which contains
+# the index of properties and relations between them
 if [ "$1" ]; then
     metadir="$1"
 else
@@ -169,134 +172,139 @@ if [[ ! -d "$metadir" ]]; then
   exit 3
 fi
 
-# locate other scripts
-DIR="${BASH_SOURCE%/*}"
-if [[ ! -d "$DIR" ]]; then DIR="$PWD"; fi
-
-# TODO move config to json and jq
-declare -A config_unescape config_date config_propdir config_parent config_label
-
+# get the path to the json file which contains
+# the schema of properties and relations between them
 if [ "$2" ]; then
-    config_props="$2"
+    config="$2"
 else
-    config_props="hostdate guestdate hostname guestname filepath filesize filetype moddate tag"
+    config="$PWD/metadir.json"
 fi
 
-config_root="datum"
+# check if config exists
+if [[ ! -f "$config" ]]; then
+  printf 1>&2 "No config at %s\n" "$config"
+  exit 3
+fi
 
-config_unescape["filetype"]=1
-config_unescape["datum"]=1
+# get the list of all property names as a space-separated string
+if [ "$3" ]; then
+    config_props="$3"
+else
+    config_props=$(jq -r 'keys | join(" ")' "$config")
+fi
 
-config_date["hostdate"]=1
-config_date["guestdate"]=1
-config_date["moddate"]=1
+# locate other scripts
+SCRIPTS="${BASH_SOURCE%/*}"
+if [[ ! -d "$SCRIPTS" ]]; then SCRIPTS="$PWD"; fi
 
-config_propdir["hostdate"]="date"
-config_propdir["guestdate"]="date"
-config_propdir["moddate"]="date"
+# find a property that doesn't have a parent, treat as root
+# if there are several matching properties, pick the first in alphabetical order
+root=$(jq -r 'map_values(select(has("parent") | not)) | keys[0]' "$config")
+# if there are no matching properties, exit with an error
+if [ ! "$root" ]; then
+  printf 1>&2 "No root property in the config %s\n" "$config"
+  exit 3
+fi
 
-config_propdir["hostname"]="name"
-config_propdir["guestname"]="name"
+# build_prop PARENT PARENT_UUID PROP
+# build_prop "datum" "12401595" "hostname"
+# set two variables, ${PROP} and ${PROP}_uuid
+# print an org-mode property or section
+build_prop () {
+    local parent="$1"
+    local parent_uuid="$2"
+    local prop="$3"
 
-config_parent["hostdate"]="datum"
-config_parent["hostname"]="datum"
-config_parent["guestdate"]="datum"
-config_parent["guestname"]="datum"
-config_parent["tag"]="datum"
-config_parent["filepath"]="datum"
-config_parent["moddate"]="filepath"
-config_parent["filetype"]="filepath"
-config_parent["filesize"]="filepath"
-
-config_label["hostdate"]="HOST_DATE"
-config_label["hostname"]="HOST_NAME"
-config_label["guestdate"]="GUEST_DATE"
-config_label["guestname"]="GUEST_NAME"
-config_label["tag"]="TAG"
-config_label["filepath"]="FILE_PATH"
-config_label["moddate"]="MOD_DATE"
-config_label["filetype"]="FILE_TYPE"
-config_label["filesize"]="FILE_SIZE"
-
-# tbn PARENT_UUID PROP
-# tbn "12401595" "hostname"
-# prints data
-# sets two variables, ${PROP} and ${PROP}_uuid
-tbn () {
-    local parent_uuid="$1"
-    local prop="$2"
-    local parent=${config_parent[$prop]}
-
-    # variables to set on return
-    declare -n VALUE="$prop"
-    declare -n UUID="${prop}_uuid"
-
-    local pair="$metadir/pairs/$parent-$prop.csv"
-
-    # override common prop dirs like name/ and date/
-    local propdir=${config_propdir[$prop]}
-    if [ ! "$propdir" ]; then
+    # query config for the name of the folder
+    # that has the index file of the property
+    local propdir=$(jq -r ".$prop.dir" "$config")
+    if [ ! "$propdir" ] || [ "$propdir" == "null" ]; then
+        # by default the name of the folder
+        # is the same as the property name
         propdir="$prop"
     fi
 
-    local prop_value=""
     local prop_uuid=""
 
-    # if prop is root, ignore pairs and print as datum
-    if [ "$config_root" == "$prop" ]; then
-        prop_uuid="$parent_uuid"
-        prop_value=$(bash "$DIR/lookup" "$metadir/props/$propdir/index.csv" "$prop_uuid")
-
-        if [ ${config_unescape[$prop]} ]; then
-            prop_value=$(printf "%s" "$prop_value" | bash "$DIR/unescape")
-        fi
-
-        VALUE="$prop_value"
-        UUID="$prop_uuid"
-
-        printf "%s\n" "$prop_value"
-
-        return 0
-    fi
-
-    if [ -f "$pair" ]; then
-        prop_uuid=$(bash "$DIR/lookup" "$pair" "$parent_uuid")
-        if [ "$prop_uuid" ]; then
-            prop_value=$(bash "$DIR/lookup" "$metadir/props/$propdir/index.csv" "$prop_uuid")
-
-            if [ ${config_unescape[$prop]} ]; then
-                prop_value=$(printf "%s" "$prop_value" | bash "$DIR/unescape")
-            fi
-
-            VALUE="$prop_value"
-            UUID="$prop_uuid"
-
-            local prop_label=${config_label[$prop]}
-            if [ ! "$prop_label" ]; then
-                prop_label="$prop"
-            fi
-
-            if [ ${config_date[$prop]} ]; then
-                printf ":%s: <%s>\n" "$prop_label" "$prop_value"
-            else
-                printf ":%s: %s\n" "$prop_label" "$prop_value"
-            fi
-
-            return 0
+    # when property is root
+    # $root_uuid is passed instead of $parent_uuid
+    if [ "$prop" == "$root" ]; then
+        prop_uuid="$2"
+    else
+        # lookup $prop_uuid associated with $parent_uuid
+        local pair="$metadir/pairs/$parent-$prop.csv"
+        if [ -f "$pair" ]; then
+            prop_uuid=$(bash "$SCRIPTS/lookup" "$pair" "$parent_uuid")
         fi
     fi
 
+    local prop_value=""
+
+    # continue only if $prop_uuid was found
+    if [ "$prop_uuid" ]; then
+        # lookup the value associated with $prop_uuid
+        prop_value=$(bash "$SCRIPTS/lookup" "$metadir/props/$propdir/index.csv" "$prop_uuid")
+
+        # get the type of property value from the config
+        prop_type=$(jq -r ".$prop.type" "$config")
+        # if property value is an escaped string, unescape it
+        if [ "$prop_type" == "string" ]; then
+            prop_value=$(printf "%s" "$prop_value" | bash "$SCRIPTS/unescape")
+        fi
+
+        # query config for the label
+        # to use in the org-mode property
+        local prop_label=$(jq -r ".$prop.label" "$config")
+        if [ ! "$prop_label" ]; then
+            # by default the label
+            # is the same as the property name
+            prop_label="$prop"
+        fi
+
+        if [ "$prop" == "$root" ]; then
+            # if property is root, print as plain text
+            printf "%s\n" "$prop_value"
+        elif [ "$prop_type" == "date" ]; then
+            # if property value is a date, wrap it in brackets
+            # and print as an org-mode property
+            printf ":%s: <%s>\n" "$prop_label" "$prop_value"
+        else
+            # otherwise print as a literal org-mode property
+            printf ":%s: %s\n" "$prop_label" "$prop_value"
+        fi
+
+    fi
+
+    # set uuid and value as global variables
+    # that can be accessed after this function returns
+    # if no $prop_uuid was found,
+    # assign empty strings to the variables
+    # so the values don't become mixed up
+    # between calls to build_prop
+    declare -n VALUE="$prop"
+    declare -n UUID="${prop}_uuid"
+    VALUE="$prop_value"
+    UUID="$prop_uuid"
 }
-export -f tbn
+export -f build_prop
 
-build_biorg () {
-    stdin_uuid="$1"
-    counter="$2"
+# build_node STDIN_UUID COUNTER
+# build_node "12401595" 1
+# print all metadata properties that are
+# associated with the root uuid STDIN_UUID
+# as a first level org-mode heading
+# with a property block and a section
+# log counter to stderr
+build_node () {
+    local stdin_uuid="$1"
+    local counter="$2"
 
+    # log counter to stderr
+    # with a carriage return to stay on one line
     printf 1>&2 "                build: %-6s parts\r" "$counter"
 
-    # skip if requested uuid is not in metadir
-    root_uuid=$(grep -o "$stdin_uuid" "$metadir/props/$config_root/index.csv")
+    # continue only if the requested uuid is in metadir
+    local root_uuid=$(grep -o "$stdin_uuid" "$metadir/props/$root/index.csv")
     if [ ! "$root_uuid" ]; then
         return
     fi
@@ -306,53 +314,75 @@ build_biorg () {
 
     printf ":UUID: %s\n" "$root_uuid"
 
+    # initialize queue of properties
     read -r -a props <<< "$config_props"
+
+    # associative array
+    # to record which properties have been processed
     declare -A processed
+
+    # set uuid of root property
+    # and set as processed
+    local "${root}_uuid"="$root_uuid"
+    processed["$root"]=1
+
+    # while queue if full
     while (( ${#props[@]} != 0 )); do
-        prop=${props[-1]}
-        parent=${config_parent[$prop]}
-        if [ ! "$parent" ]; then parent="$prop"; fi
-        if [ "$parent" == "$config_root" ]; then
-            tbn "$root_uuid" "$prop"
-            processed["$prop"]=1
+        # get the last element of queue
+        local prop=${props[-1]}
+        # get its parent property
+        local parent=$(jq -r ".$prop.parent" "$config")
+        if [ ${processed[$prop]} ] || [ ! "$parent" ]; then
+            # if processed or has no parent
+            # do nothing
+            :
         elif [ ${processed[$parent]} ]; then
-            parent_var="${parent}_uuid"
-            tbn "${!parent_var}" "$prop"
+            # if parent has been processed
+            # build property and set as processed
+            local parent_uuid="${parent}_uuid"
+            build_prop "$parent" "${!parent_uuid}" "$prop"
             processed["$prop"]=1
         else
-            props=( "$prop" "${props[@]}" )
+            # if parent has not been processed
+            # add itself and parent to queue
+            props=( "$prop" "$parent" "${props[@]}" )
         fi
+        # remove from queue
         unset -v 'props[-1]'
     done
 
     printf ":END:\n"
 
-    tbn "$root_uuid" "$config_root"
+    # print root prop
+    build_prop "" "$root_uuid" "$root"
 }
 
-export -f build_biorg
+export -f build_node
 
 counter=0;
 
-# get datum uuids from stdin
 if [[ ! -t 0 ]]; then
+    # build nodes for all root uuids from stdin
     while read -r line; do
-        build_biorg "$line" "$counter";
+        build_node "$line" "$counter";
         counter=$((counter + 1));
     done
 else
-# otherwise get all datums
+    # otherwise build nodes for all root uuids in metadir
     while read -r line; do
-        build_biorg "$line" "$counter";
+        build_node "$line" "$counter";
         counter=$((counter + 1));
-    done < cat "$metadir/props/datum/index.csv" | cut -c 1-64
+    done <<< $(cat "$metadir/props/$root/index.csv" | cut -c 1-64)
 fi
 
-# output newline to stderr
-# to preserve the last counter line
-# with a carriage return
+# output a newline to stderr
+# to preserve the last line
+# with a counter and a carriage return
 printf 1>&2 "\n"
 #+end_src
+
+#+RESULTS:
+
 ** build-biorg notes
 inconsistent corruption bugs accompany build-biorg
 some are fixed by mktemp
@@ -1876,6 +1906,7 @@ teardown_suite() {
 ** build-biorg
 #+begin_src sh :tangle tests/test_build-biorg :tangle-mode (identity #o755)
 script="/Users/fetsorn/mm/0---codes/0-beams/scripts/build-biorg"
+config="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
 uuid1="8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704"
 value1="value1"
 metadir=$(mktemp -d)
@@ -1891,7 +1922,7 @@ code() {
 # test_build-biorg_fails_when_no_metadir() {}
 test_build-biorg_succeeds() {
     code
-    assert "bash $script $metadir"
+    assert "bash $script $metadir $config \"hostname hostdate guestname guestdate filepath filesize\""
 }
 test_build-biorg_prints() {
     code
@@ -1902,10 +1933,63 @@ test_build-biorg_prints() {
 :END:
 value1
 EOF
-    assert_equals "$(mock)" "$(bash $script $metadir)"
+    assert_equals "$(mock)" "$(bash $script $metadir $config "hostname hostdate guestname guestdate filepath filesize")"
 }
 
 teardown_suite() {
   rm -rf $metadir
+}
+#+end_src
+** config
+#+begin_src json :tangle tests/config.json
+{
+    "datum": {
+        "type": "string"
+    },
+    "hostdate": {
+        "parent": "datum",
+        "dir": "date",
+        "type": "date",
+        "label": "HOST_DATE"
+    },
+    "hostname": {
+        "parent": "datum",
+        "dir": "name",
+        "label": "HOST_NAME"
+    },
+    "guestdate": {
+        "parent": "datum",
+        "dir": "date",
+        "type": "date",
+        "label": "GUEST_DATE"
+    },
+    "guestname": {
+        "parent": "datum",
+        "dir": "name",
+        "label": "GUEST_NAME"
+    },
+    "tag": {
+        "parent": "datum",
+        "label": "TAG"
+    },
+    "filepath": {
+        "parent": "datum",
+        "label": "FILE_PATH"
+    },
+    "moddate": {
+        "parent": "filepath",
+        "dir": "date",
+        "type": "date",
+        "label": "GUEST_DATE"
+    },
+    "filetype": {
+        "parent": "filepath",
+        "label": "FILE_TYPE",
+        "type": "string"
+    },
+    "filesize": {
+        "parent": "filepath",
+        "label": "FILE_SIZE"
+    }
 }
 #+end_src
