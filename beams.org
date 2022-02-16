@@ -808,17 +808,6 @@ function escape_json(str) {
 
     return "\42" str "\42"
 }
-function parse_property(line) {
-    gsub("^:", "", line);
-    st = index(line,":");
-    prop_name = substr(line,1,st-1);
-    prop_value = substr(line,st+1);
-    # trim whitespace
-    gsub("^[ \t]+", "", prop_value);
-    gsub("[ \t]+$", "", prop_value);
-
-    return prop_value
-}
 function trim_timestamp(prop_value) {
     # trim timestamp brackets
     gsub(/^</, "", prop_value);
@@ -826,7 +815,7 @@ function trim_timestamp(prop_value) {
 
     return prop_value
 }
-function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, filehash, guestname, guestdate, hostname, hostdate, privacy, tag, datum) {
+function write_node(temp, datum) {
 
     # printf "%s\n", datum > "/dev/stderr";
 
@@ -837,6 +826,7 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
 
     # printf "%s\n", datum_escaped > "/dev/stderr";
 
+    datum_uuid = props["UUID"];
     # if no datum_uuid is provided, generate unique uuid
     if (datum_uuid == "") {
         datum_uuid_cmd = "uuidgen | sha256sum | cut -c 1-64";
@@ -845,6 +835,8 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
         close(datum_uuid_cmd);
     }
 
+    system("mkdir -p " temp "/props/datum")
+
     # write datum_uuid,datum to metadir/props/datum/index.csv
     datum_index = temp "/props/datum/index.csv";
     printf "%s,%s\n", datum_uuid, datum_escaped >> datum_index;
@@ -852,10 +844,13 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
     # datum_escaped no longer needed
     close(datum_escaped_cmd);
 
+    guestname = props["GUEST_NAME"]
     if (guestname != "") {
         # hashsum guestname to get uuid
         guestname_uuid_cmd = "printf '%s' '" guestname "' | sha256sum | cut -c 1-64";
         guestname_uuid_cmd | getline guestname_uuid;
+
+        system("mkdir -p " temp "/pairs " temp "/props/name")
 
         # write guestname_uuid,guestname to metadir/props/name/index.csv
         guestname_index = temp "/props/name/index.csv";
@@ -869,10 +864,13 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
         close(guestname_uuid_cmd);
     } # guestname
 
+    guestdate = trim_timestamp(props["GUEST_DATE"])
     if (guestdate != "") {
         # hashsum guestdate to get uuid
         guestdate_uuid_cmd = "printf '%s' '" guestdate "' | sha256sum | cut -c 1-64";
         guestdate_uuid_cmd | getline guestdate_uuid;
+
+        system("mkdir -p " temp "/pairs " temp "/props/date")
 
         # write guestdate_uuid,guestdate to metadir/props/date/index.csv
         guestdate_index = temp "/props/date/index.csv";
@@ -886,10 +884,13 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
         close(guestdate_uuid_cmd);
     } # guestdate
 
+    hostname = props["HOST_NAME"]
     if (hostname != "") {
         # hashsum hostname to get uuid
         hostname_uuid_cmd = "printf '%s' '" hostname "' | sha256sum | cut -c 1-64";
         hostname_uuid_cmd | getline hostname_uuid;
+
+        system("mkdir -p " temp "/pairs " temp "/props/name")
 
         # write hostname_uuid,hostname to metadir/props/name/index.csv
         hostname_index = temp "/props/name/index.csv";
@@ -903,10 +904,13 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
         close(hostname_uuid_cmd);
     } # hostname
 
+    hostdate = trim_timestamp(props["HOST_DATE"])
     if (hostdate != "") {
         # hashsum hostdate to get uuid
         hostdate_uuid_cmd = "printf '%s' '" hostdate "' | sha256sum | cut -c 1-64";
         hostdate_uuid_cmd | getline hostdate_uuid;
+
+        system("mkdir -p " temp "/pairs " temp "/props/date")
 
         # write hostdate_uuid,hostdate to metadir/props/date/index.csv
         hostdate_index = temp "/props/date/index.csv";
@@ -920,10 +924,13 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
         close(hostdate_uuid_cmd);
     } # hostdate
 
+    privacy = props["PRIVACY"]
     if (privacy != "") {
         # hashsum privacy to get uuid
         privacy_uuid_cmd = "printf '%s' '" privacy "' | sha256sum | cut -c 1-64";
         privacy_uuid_cmd | getline privacy_uuid;
+
+        system("mkdir -p " temp "/pairs " temp "/props/privacy")
 
         # write privacy_uuid,privacy to metadir/props/date/index.csv
         privacy_index = temp "/props/privacy/index.csv";
@@ -937,10 +944,13 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
         close(privacy_uuid_cmd);
     } # privacy
 
+    tag = props["TAG"]
     if (tag != "") {
         # hashsum tag to get uuid
         tag_uuid_cmd = "printf '%s' '" tag "' | sha256sum | cut -c 1-64";
         tag_uuid_cmd | getline tag_uuid;
+
+        system("mkdir -p " temp "/pairs " temp "/props/tag")
 
         # write tag_uuid,tag to metadir/props/date/index.csv
         tag_index = temp "/props/tag/index.csv";
@@ -954,6 +964,7 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
         close(tag_uuid_cmd);
     } # tag
 
+    filepath = props["FILE_PATH"]
     if (filepath != "") {
 
         # filepath can contain arbitrary characters
@@ -969,6 +980,8 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
         # escape filepath
         filepath_escaped = escape_json(filepath);
 
+        system("mkdir -p " temp "/pairs " temp "/props/filepath")
+
         # write filepath_uuid,filepath to metadir/props/filepath/index.csv
         filepath_index = temp "/props/filepath/index.csv";
         printf "%s,%s\n", filepath_uuid, filepath_escaped >> filepath_index;
@@ -980,10 +993,13 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
         datum_filepath_pair = temp "/pairs/datum-filepath.csv";
         printf "%s,%s\n", datum_uuid, filepath_uuid >> datum_filepath_pair;
 
+        filesize = props["FILE_SIZE"]
         if (filesize != "") {
             # hashsum filesize to get uuid
             filesize_uuid_cmd = "printf '%s' '" filesize "' | sha256sum | cut -c 1-64";
             filesize_uuid_cmd | getline filesize_uuid;
+
+            system("mkdir -p " temp "/pairs " temp "/props/filesize")
 
             # write filesize_uuid,filesize to metadir/props/filesize/index.csv
             filesize_index = temp "/props/filesize/index.csv";
@@ -997,6 +1013,7 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
             close(filesize_uuid_cmd);
         } # filesize
 
+        filetype = props["FILE_TYPE"]
         if (filetype != "") {
 
             # filetype can contain arbitrary characters
@@ -1011,6 +1028,8 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
 
             # escape filetype
             filetype_escaped = escape_json(filetype);
+
+            system("mkdir -p " temp "/pairs " temp "/props/filetype")
 
             # write filetype_uuid,filetype to metadir/props/filetype/index.csv
             filetype_index = temp "/props/filetype/index.csv";
@@ -1027,10 +1046,13 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
             close(filetype_uuid_cmd);
         } # filetype
 
+        moddate = trim_timestamp(props["MOD_DATE"])
         if (moddate != "") {
             # hashsum moddate to get uuid
             moddate_uuid_cmd = "printf '%s' '" moddate "' | sha256sum | cut -c 1-64";
             moddate_uuid_cmd | getline moddate_uuid;
+
+            system("mkdir -p " temp "/pairs " temp "/props/date")
 
             # write moddate_uuid,moddate to metadir/props/date/index.csv
             moddate_index = temp "/props/date/index.csv";
@@ -1045,6 +1067,9 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
         } # moddate
 
         if (filehash != "") {
+
+            system("mkdir -p " temp "/pairs")
+
             # write filepath_uuid,filehash to metadir/pairs/filepath-filehash.csv
             filepath_filehash_pair = temp "/pairs/filepath-filehash.csv";
             printf "%s,%s\n", filepath_uuid, filehash >> filepath_filehash_pair;
@@ -1055,9 +1080,10 @@ function write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, fil
     } # filepath
 }
 BEGIN {
-    "mktemp -d" | getline temp;
-    mkdir_cmd = "mkdir -p " temp "/props/filepath " temp "/props/filesize " temp "/props/filetype " temp "/props/date " temp "/props/name " temp "/props/privacy " temp "/props/tag " temp "/props/datum " temp "/pairs";
-    system(mkdir_cmd);
+    temp_cmd = "mktemp -d"
+    temp_cmd | getline temp;
+    close(temp_cmd)
+
     counter=0;
 }
 # heading line
@@ -1065,7 +1091,7 @@ BEGIN {
     afterheading=1
     # write previous node
     if (node==1) {
-        write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, filehash, guestname, guestdate, hostname, hostdate, privacy, tag, datum);
+        write_node(temp, datum);
     }
     # remember to write node on the next heading
     node=1;
@@ -1073,18 +1099,7 @@ BEGIN {
     counter++;
     printf "%s\r", counter >> "/dev/stderr";
     # delete previous node's props and datum
-    datum_uuid="";
-    filepath="";
-    filesize="";
-    filetype="";
-    moddate="";
-    filehash="";
-    guestname="";
-    guestdate="";
-    hostname="";
-    hostdate="";
-    privacy="";
-    tag="";
+    delete props;
     datum="";
     next;
 }
@@ -1100,93 +1115,19 @@ BEGIN {
     afterheading=0;
     property_block=0; next;
 }
-/^:UUID:/ {
-    afterheading=0;
-    if (property_block==1) {
-        datum_uuid = parse_property($0);
-        next;
-    }
-}
-/^:FILE_PATH:/ {
-    afterheading=0;
-    if (property_block==1) {
-        filepath = parse_property($0);
-        next;
-    }
-}
-/^:FILE_SIZE:/ {
-    afterheading=0;
-    if (property_block==1) {
-        filesize = parse_property($0);
-        next;
-    }
-}
-/^:FILE_TYPE:/ {
-    afterheading=0;
-    if (property_block==1) {
-        filetype = parse_property($0);
-        next;
-    }
-}
-/^:MOD_DATE:/ {
-    afterheading=0;
-    if (property_block==1) {
-        moddate = trim_timestamp(parse_property($0));
-        next;
-    }
-}
-/^:FILE_HASH:/ {
-    afterheading=0;
-    if (property_block==1) {
-        filehash = parse_property($0);
-        next;
-    }
-}
-/^:GUEST_NAME:/ {
-    afterheading=0;
-    if (property_block==1) {
-        guestname = parse_property($0);
-        next;
-    }
-}
-/^:GUEST_DATE:/ {
-    afterheading=0;
-    if (property_block==1) {
-        guestdate = trim_timestamp(parse_property($0));
-        next;
-    }
-}
-/^:HOST_NAME:/ {
-    afterheading=0;
-    if (property_block==1) {
-        hostname = parse_property($0);
-        next;
-    }
-}
-/^:HOST_DATE:/ {
-    afterheading=0;
-    if (property_block==1) {
-        hostdate = trim_timestamp(parse_property($0));
-        next;
-    }
-}
-/^:PRIVACY:/ {
-    afterheading=0;
-    if (property_block==1) {
-        privacy = parse_property($0);
-        next;
-    }
-}
-/^:TAG:/ {
-    afterheading=0;
-    if (property_block==1) {
-        tag = parse_property($0);
-        next;
-    }
-}
 /^:/ {
     afterheading=0;
     if (property_block==1) {
+        line=$0;
+        gsub("^:", "", line);
+        st = index(line,":");
+        prop_name = substr(line,1,st-1);
+        prop_value = substr(line,st+1);
+        # trim whitespace
+        gsub("^[ \t]+", "", prop_value);
+        gsub("[ \t]+$", "", prop_value);
+        printf "%s=%s\n", prop_name, prop_value >> "/dev/stderr"
+        props[prop_name]=prop_value;
         next;
     }
 }
@@ -1197,7 +1138,7 @@ BEGIN {
 END {
     # write last node
     if (node==1) {
-        write_node(temp, datum_uuid, filepath, filesize, filetype, moddate, filehash, guestname, guestdate, hostname, hostdate, privacy, tag, datum);
+        write_node(temp, datum);
     }
     printf "%s\n", temp;
 }
