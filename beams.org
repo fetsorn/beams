@@ -2080,11 +2080,15 @@ code() {
 ,* .
 :PROPERTIES:
 :UUID: 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704
+:HOST_DATE: <2001-01-01>
+:TAG: tag
 :END:
 value1
 ,* .
 :PROPERTIES:
 :UUID: 0bb6648436e480468413313bce468453d5657fb9f8aa4b6e98c719b83415b0ae
+:HOST_DATE: <2002-01-01>
+:TAG: tag
 :END:
 value2
 EOF
@@ -2109,5 +2113,45 @@ test_break-biorg_writes_datum_index() {
 0bb6648436e480468413313bce468453d5657fb9f8aa4b6e98c719b83415b0ae,\"value2\"
 EOF
     assert_equals "$(mock)" "$(cat $testdir/props/datum/index.csv)"
+}
+test_break-biorg_writes_date_index() {
+    code
+    fake mktemp <<< "$testdir"
+    awk -f $script $biorg &>/dev/null
+    fake mock << EOF
+4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d,2001-01-01
+161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc,2002-01-01
+EOF
+    assert_equals "$(mock)" "$(cat $testdir/props/date/index.csv)"
+}
+test_break-biorg_writes_date_pair() {
+    code
+    fake mktemp <<< "$testdir"
+    awk -f $script $biorg &>/dev/null
+    fake mock << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d
+0bb6648436e480468413313bce468453d5657fb9f8aa4b6e98c719b83415b0ae,161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc
+EOF
+    assert_equals "$(mock)" "$(cat $testdir/pairs/datum-hostdate.csv)"
+}
+test_break-biorg_writes_tag_index() {
+    code
+    fake mktemp <<< "$testdir"
+    awk -f $script $biorg &>/dev/null
+    fake mock << EOF
+2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+EOF
+    assert_equals "$(mock)" "$(cat $testdir/props/tag/index.csv)"
+}
+test_break-biorg_writes_tag_pair() {
+    code
+    fake mktemp <<< "$testdir"
+    awk -f $script $biorg &>/dev/null
+    fake mock << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+0bb6648436e480468413313bce468453d5657fb9f8aa4b6e98c719b83415b0ae,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+EOF
+    assert_equals "$(mock)" "$(cat $testdir/pairs/datum-tag.csv)"
 }
 #+end_src
