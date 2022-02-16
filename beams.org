@@ -1915,8 +1915,8 @@ teardown_suite() {
 # fails with wrong locale
 # succeeds with right locale
 #+end_src
-** build-biorg
-#+begin_src sh :tangle tests/test_build-biorg :tangle-mode (identity #o755)
+** build-prop
+#+begin_src sh :tangle tests/test_build-prop :tangle-mode (identity #o755)
 script="/Users/fetsorn/mm/0---codes/0-beams/scripts/build-biorg"
 config="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
 uuid1="8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704"
@@ -1929,12 +1929,89 @@ setup() {
 code() {
     mkdir -p $metadir/pairs $metadir/props/{tag,date,datum,filesize,filetype,name,rulepath}
     printf '%s,"%s"' "$uuid1" "$value1" > $metadir/props/datum/index.csv
+    # source functions and redirect the rest to null
+    source $script -d "$metadir" -c "$config" &>/dev/null;
+}
+
+# test_build-biorg_fails_when_no_metadir() {}
+test_build-prop_succeeds() {
+    code
+    assert "build_prop \"\" \"8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704\" \"datum\""
+}
+test_build-prop_prints() {
+    code
+    fake mock << EOF
+value1
+EOF
+    assert_equals "$(mock)" "$(build_prop "" "8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704" "datum")"
+}
+
+teardown_suite() {
+  rm -rf $metadir
+}
+#+end_src
+** build-node
+#+begin_src sh :tangle tests/test_build-node :tangle-mode (identity #o755)
+script="/Users/fetsorn/mm/0---codes/0-beams/scripts/build-biorg"
+config="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
+uuid1="8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704"
+value1="value1"
+metadir=$(mktemp -d)
+
+setup() {
+  rm -rf "$metadir"
+}
+code() {
+    mkdir -p $metadir/pairs $metadir/props/{tag,date,datum,filesize,filetype,name,rulepath}
+    printf '%s,"%s"' "$uuid1" "$value1" > $metadir/props/datum/index.csv
+    # source functions and redirect the rest to null
+    source $script -d "$metadir" -c "$config" &>/dev/null;
+}
+
+# test_build-biorg_fails_when_no_metadir() {}
+test_build-node_succeeds() {
+    code
+    assert "build_node \"8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704\" \"1\" 2>/dev/null"
+}
+test_build-node_prints() {
+    code
+    fake mock << EOF
+,* .
+:PROPERTIES:
+:UUID: 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704
+:END:
+value1
+EOF
+    assert_equals "$(mock)" "$(build_node "8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704" "1" 2>/dev/null)"
+}
+
+teardown_suite() {
+  rm -rf $metadir
+}
+#+end_src
+** build-biorg
+#+begin_src sh :tangle tests/test_build-biorg :tangle-mode (identity #o755)
+script="/Users/fetsorn/mm/0---codes/0-beams/scripts/build-biorg"
+config="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
+uuid1="8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704"
+value1="value1"
+uuid2="0bb6648436e480468413313bce468453d5657fb9f8aa4b6e98c719b83415b0ae"
+value2="value2"
+metadir=$(mktemp -d)
+
+setup() {
+  rm -rf "$metadir"
+}
+code() {
+    mkdir -p $metadir/pairs $metadir/props/{tag,date,datum,filesize,filetype,name,rulepath}
+    printf '%s,"%s"\n' "$uuid1" "$value1" >> $metadir/props/datum/index.csv
+    printf '%s,"%s"\n' "$uuid2" "$value2" >> $metadir/props/datum/index.csv
 }
 
 # test_build-biorg_fails_when_no_metadir() {}
 test_build-biorg_succeeds() {
     code
-    assert "bash $script -d $metadir -c $config -p \"hostname hostdate guestname guestdate filepath filesize\""
+    assert "bash $script -d $metadir -c $config 2>/dev/null"
 }
 test_build-biorg_prints() {
     code
@@ -1944,8 +2021,13 @@ test_build-biorg_prints() {
 :UUID: 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704
 :END:
 value1
+,* .
+:PROPERTIES:
+:UUID: 0bb6648436e480468413313bce468453d5657fb9f8aa4b6e98c719b83415b0ae
+:END:
+value2
 EOF
-    assert_equals "$(mock)" "$(bash $script -d $metadir -c $config -p "hostname hostdate guestname guestdate filepath filesize")"
+    assert_equals "$(mock)" "$(bash $script -d $metadir -c $config 2>/dev/null)"
 }
 
 teardown_suite() {
@@ -2004,4 +2086,8 @@ teardown_suite() {
         "label": "FILE_SIZE"
     }
 }
+#+end_src
+
+** break-biorg
+#+begin_src sh :tangle tests/test_break-biorg :tangle-mode (identity #o755)
 #+end_src
