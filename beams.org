@@ -216,6 +216,7 @@ if [ ! "$root" ]; then
   exit 3
 fi
 
+# TODO add support for hash, only pair and no index
 # build_prop PARENT PARENT_UUID PROP
 # build_prop "datum" "12401595" "hostname"
 # set two variables, ${PROP} and ${PROP}_uuid
@@ -815,6 +816,45 @@ function trim_timestamp(prop_value) {
 
     return prop_value
 }
+# TODO add support for hash, only pair and no index
+# TODO add support for datum, only index and no pair
+function write_prop(prop, prop_label, prop_dir, parent, parent_uuid) {
+    prop_value = props[prop_label]
+    if (prop_value != "") {
+
+        if (config["type"][prop] == "date") {
+            prop_value = trim_timestamp(prop_value);
+        };
+
+        # string can contain arbitrary characters
+        # so it is wrapped in single quotes when passed to bash pipes
+        # escape the single quotes inside the raw string here
+        prop_value_bash = prop_value
+        if (config["type"][prop] == "string") {
+            gsub("'", "'\"'\"'", prop_value_bash);
+        };
+
+        prop_uuid_cmd = "printf '%s' '" prop_value_bash "' | sha256sum | cut -c 1-64";
+        prop_uuid_cmd | getline prop_uuid;
+
+        system("mkdir -p " temp "/pairs " temp "/props/" prop_dir)
+
+        prop_value_escaped = prop_value;
+        if (config["type"][prop] == "string") {
+            prop_value_escaped = escape_json(prop_value);
+        };
+
+        # write prop_uuid,prop_value to metadir/props/${prop_dir}/index.csv
+        prop_index = temp "/props/" prop_dir "/index.csv";
+        printf "%s,%s\n", prop_uuid, prop_value_escaped >> prop_index;
+
+        # write parent_uuid,prop_uuid to metadir/pairs/datum-guestname.csv
+        prop_pair = temp "/pairs/" parent "-" prop ".csv";
+        printf "%s,%s\n", parent_uuid, prop_uuid >> prop_pair;
+
+        close(prop_uuid_cmd);
+    }
+}
 function write_node(temp, datum) {
 
     # printf "%s\n", datum > "/dev/stderr";
@@ -844,236 +884,34 @@ function write_node(temp, datum) {
     # datum_escaped no longer needed
     close(datum_escaped_cmd);
 
-    guestname = props["GUEST_NAME"]
-    if (guestname != "") {
-        # hashsum guestname to get uuid
-        guestname_uuid_cmd = "printf '%s' '" guestname "' | sha256sum | cut -c 1-64";
-        guestname_uuid_cmd | getline guestname_uuid;
+    write_prop("guestname", "GUEST_NAME", "name", "datum", datum_uuid)
 
-        system("mkdir -p " temp "/pairs " temp "/props/name")
+    write_prop("guestdate", "GUEST_DATE", "date", "datum", datum_uuid)
 
-        # write guestname_uuid,guestname to metadir/props/name/index.csv
-        guestname_index = temp "/props/name/index.csv";
-        printf "%s,%s\n", guestname_uuid, guestname >> guestname_index;
+    write_prop("hostname", "HOST_NAME", "name", "datum", datum_uuid)
 
-        # write datum_uuid,guestname_uuid to metadir/pairs/datum-guestname.csv
-        datum_guestname_pair = temp "/pairs/datum-guestname.csv";
-        printf "%s,%s\n", datum_uuid, guestname_uuid >> datum_guestname_pair;
+    write_prop("hostdate", "HOST_DATE", "date", "datum", datum_uuid)
 
-        # guestname_uuid no longer needed
-        close(guestname_uuid_cmd);
-    } # guestname
+    write_prop("privacy", "PRIVACY", "privacy", "datum", datum_uuid)
 
-    guestdate = trim_timestamp(props["GUEST_DATE"])
-    if (guestdate != "") {
-        # hashsum guestdate to get uuid
-        guestdate_uuid_cmd = "printf '%s' '" guestdate "' | sha256sum | cut -c 1-64";
-        guestdate_uuid_cmd | getline guestdate_uuid;
+    write_prop("tag", "TAG", "tag", "datum", datum_uuid)
 
-        system("mkdir -p " temp "/pairs " temp "/props/date")
+    if (props["FILE_PATH"] != "") {
 
-        # write guestdate_uuid,guestdate to metadir/props/date/index.csv
-        guestdate_index = temp "/props/date/index.csv";
-        printf "%s,%s\n", guestdate_uuid, guestdate >> guestdate_index;
+        write_prop("filepath", "FILE_PATH", "filepath", "datum", datum_uuid)
 
-        # write datum_uuid,guestdate_uuid to metadir/pairs/datum-guestdate.csv
-        datum_guestdate_pair = temp "/pairs/datum-guestdate.csv";
-        printf "%s,%s\n", datum_uuid, guestdate_uuid >> datum_guestdate_pair;
+        write_prop("filesize", "FILE_SIZE", "filesize", "filepath", datum_uuid)
+        write_prop("filetype", "FILE_TYPE", "filetype", "filepath", datum_uuid)
+        write_prop("moddate", "MOD_DATE", "date", "filepath", datum_uuid)
 
-        # guestdate_uuid no longer needed
-        close(guestdate_uuid_cmd);
-    } # guestdate
+        # if (filehash != "") {
 
-    hostname = props["HOST_NAME"]
-    if (hostname != "") {
-        # hashsum hostname to get uuid
-        hostname_uuid_cmd = "printf '%s' '" hostname "' | sha256sum | cut -c 1-64";
-        hostname_uuid_cmd | getline hostname_uuid;
+        #     system("mkdir -p " temp "/pairs")
 
-        system("mkdir -p " temp "/pairs " temp "/props/name")
-
-        # write hostname_uuid,hostname to metadir/props/name/index.csv
-        hostname_index = temp "/props/name/index.csv";
-        printf "%s,%s\n", hostname_uuid, hostname >> hostname_index;
-
-        # write datum_uuid,hostname_uuid to metadir/pairs/datum-hostname.csv
-        datum_hostname_pair = temp "/pairs/datum-hostname.csv";
-        printf "%s,%s\n", datum_uuid, hostname_uuid >> datum_hostname_pair;
-
-        # hostname_uuid no longer needed
-        close(hostname_uuid_cmd);
-    } # hostname
-
-    hostdate = trim_timestamp(props["HOST_DATE"])
-    if (hostdate != "") {
-        # hashsum hostdate to get uuid
-        hostdate_uuid_cmd = "printf '%s' '" hostdate "' | sha256sum | cut -c 1-64";
-        hostdate_uuid_cmd | getline hostdate_uuid;
-
-        system("mkdir -p " temp "/pairs " temp "/props/date")
-
-        # write hostdate_uuid,hostdate to metadir/props/date/index.csv
-        hostdate_index = temp "/props/date/index.csv";
-        printf "%s,%s\n", hostdate_uuid, hostdate >> hostdate_index;
-
-        # write datum_uuid,hostdate_uuid to metadir/pairs/datum-hostdate.csv
-        datum_hostdate_pair = temp "/pairs/datum-hostdate.csv";
-        printf "%s,%s\n", datum_uuid, hostdate_uuid >> datum_hostdate_pair;
-
-        # hostdate_uuid no longer needed
-        close(hostdate_uuid_cmd);
-    } # hostdate
-
-    privacy = props["PRIVACY"]
-    if (privacy != "") {
-        # hashsum privacy to get uuid
-        privacy_uuid_cmd = "printf '%s' '" privacy "' | sha256sum | cut -c 1-64";
-        privacy_uuid_cmd | getline privacy_uuid;
-
-        system("mkdir -p " temp "/pairs " temp "/props/privacy")
-
-        # write privacy_uuid,privacy to metadir/props/date/index.csv
-        privacy_index = temp "/props/privacy/index.csv";
-        printf "%s,%s\n", privacy_uuid, privacy >> privacy_index;
-
-        # write datum_uuid,privacy_uuid to metadir/pairs/datum-privacy.csv
-        datum_privacy_pair = temp "/pairs/datum-privacy.csv";
-        printf "%s,%s\n", datum_uuid, privacy_uuid >> datum_privacy_pair;
-
-        # privacy_uuid no longer needed
-        close(privacy_uuid_cmd);
-    } # privacy
-
-    tag = props["TAG"]
-    if (tag != "") {
-        # hashsum tag to get uuid
-        tag_uuid_cmd = "printf '%s' '" tag "' | sha256sum | cut -c 1-64";
-        tag_uuid_cmd | getline tag_uuid;
-
-        system("mkdir -p " temp "/pairs " temp "/props/tag")
-
-        # write tag_uuid,tag to metadir/props/date/index.csv
-        tag_index = temp "/props/tag/index.csv";
-        printf "%s,%s\n", tag_uuid, tag >> tag_index;
-
-        # write datum_uuid,tag_uuid to metadir/pairs/datum-tag.csv
-        datum_tag_pair = temp "/pairs/datum-tag.csv";
-        printf "%s,%s\n", datum_uuid, tag_uuid >> datum_tag_pair;
-
-        # tag_uuid no longer needed
-        close(tag_uuid_cmd);
-    } # tag
-
-    filepath = props["FILE_PATH"]
-    if (filepath != "") {
-
-        # filepath can contain arbitrary characters
-        # so it is wrapped in single quotes when passed to bash pipes
-        # escape the single quotes inside the raw string here
-        filepath_bash = filepath;
-        gsub("'", "'\"'\"'", filepath_bash);
-
-        # hashsum filepath to get uuid
-        filepath_uuid_cmd = "printf '%s' '" filepath_bash "' | sha256sum | cut -c 1-64";
-        filepath_uuid_cmd | getline filepath_uuid;
-
-        # escape filepath
-        filepath_escaped = escape_json(filepath);
-
-        system("mkdir -p " temp "/pairs " temp "/props/filepath")
-
-        # write filepath_uuid,filepath to metadir/props/filepath/index.csv
-        filepath_index = temp "/props/filepath/index.csv";
-        printf "%s,%s\n", filepath_uuid, filepath_escaped >> filepath_index;
-
-        # filepath_escaped no longer needed
-        close(filepath_escaped_cmd);
-
-        # write datum_uuid,filepath_uuid to metadir/pairs/datum-filepath.csv
-        datum_filepath_pair = temp "/pairs/datum-filepath.csv";
-        printf "%s,%s\n", datum_uuid, filepath_uuid >> datum_filepath_pair;
-
-        filesize = props["FILE_SIZE"]
-        if (filesize != "") {
-            # hashsum filesize to get uuid
-            filesize_uuid_cmd = "printf '%s' '" filesize "' | sha256sum | cut -c 1-64";
-            filesize_uuid_cmd | getline filesize_uuid;
-
-            system("mkdir -p " temp "/pairs " temp "/props/filesize")
-
-            # write filesize_uuid,filesize to metadir/props/filesize/index.csv
-            filesize_index = temp "/props/filesize/index.csv";
-            printf "%s,%s\n", filesize_uuid, filesize >> filesize_index;
-
-            # write filepath_uuid,filesize_uuid to metadir/pairs/filepath-filesize.csv
-            filepath_filesize_pair = temp "/pairs/filepath-filesize.csv";
-            printf "%s,%s\n", filepath_uuid, filesize_uuid >> filepath_filesize_pair;
-
-            # filesize_uuid no longer needed
-            close(filesize_uuid_cmd);
-        } # filesize
-
-        filetype = props["FILE_TYPE"]
-        if (filetype != "") {
-
-            # filetype can contain arbitrary characters
-            # so it is wrapped in single quotes when passed to bash pipes
-            # escape the single quotes inside the raw string here
-            filetype_bash = filetype;
-            gsub("'", "'\"'\"'", filetype_bash);
-
-            # hashsum filetype to get uuid
-            filetype_uuid_cmd = "printf '%s' '" filetype_bash "' | sha256sum | cut -c 1-64";
-            filetype_uuid_cmd | getline filetype_uuid;
-
-            # escape filetype
-            filetype_escaped = escape_json(filetype);
-
-            system("mkdir -p " temp "/pairs " temp "/props/filetype")
-
-            # write filetype_uuid,filetype to metadir/props/filetype/index.csv
-            filetype_index = temp "/props/filetype/index.csv";
-            printf "%s,%s\n", filetype_uuid, filetype_escaped >> filetype_index;
-
-            # filetype_escaped no longer needed
-            close(filetype_escaped_cmd);
-
-            # write filepath_uuid,filetype_uuid to metadir/pairs/filepath-filetype.csv
-            filepath_filetype_pair = temp "/pairs/filepath-filetype.csv";
-            printf "%s,%s\n", filepath_uuid, filetype_uuid >> filepath_filetype_pair;
-
-            # filetype_uuid no longer needed
-            close(filetype_uuid_cmd);
-        } # filetype
-
-        moddate = trim_timestamp(props["MOD_DATE"])
-        if (moddate != "") {
-            # hashsum moddate to get uuid
-            moddate_uuid_cmd = "printf '%s' '" moddate "' | sha256sum | cut -c 1-64";
-            moddate_uuid_cmd | getline moddate_uuid;
-
-            system("mkdir -p " temp "/pairs " temp "/props/date")
-
-            # write moddate_uuid,moddate to metadir/props/date/index.csv
-            moddate_index = temp "/props/date/index.csv";
-            printf "%s,%s\n", moddate_uuid, moddate >> moddate_index;
-
-            # write filepath_uuid,moddate_uuid to metadir/pairs/filepath-moddate.csv
-            filepath_moddate_pair = temp "/pairs/filepath-moddate.csv";
-            printf "%s,%s\n", filepath_uuid, moddate_uuid >> filepath_moddate_pair;
-
-            # moddate_uuid no longer needed
-            close(moddate_uuid_cmd);
-        } # moddate
-
-        if (filehash != "") {
-
-            system("mkdir -p " temp "/pairs")
-
-            # write filepath_uuid,filehash to metadir/pairs/filepath-filehash.csv
-            filepath_filehash_pair = temp "/pairs/filepath-filehash.csv";
-            printf "%s,%s\n", filepath_uuid, filehash >> filepath_filehash_pair;
-        } # filehash
+        #     # write filepath_uuid,filehash to metadir/pairs/filepath-filehash.csv
+        #     filepath_filehash_pair = temp "/pairs/filepath-filehash.csv";
+        #     printf "%s,%s\n", filepath_uuid, filehash >> filepath_filehash_pair;
+        # } # filehash
 
         # filepath_uuid no longer needed
         close(filepath_uuid_cmd);
@@ -1084,6 +922,37 @@ BEGIN {
     temp_cmd | getline temp;
     close(temp_cmd)
 
+    config["name"]["HOST_DATE"]="hostdate"
+    config["name"]["GUEST_DATE"]="hostdate"
+    config["name"]["HOST_NAME"]="hostdate"
+    config["name"]["GUEST_NAME"]="hostdate"
+    config["name"]["TAG"]="tag"
+    config["name"]["PRIVACY"]="privacy"
+    config["name"]["FILE_PATH"]="filepath"
+    config["name"]["FILE_SIZE"]="filesize"
+    config["name"]["FILE_TYPE"]="filetype"
+    config["name"]["FILE_HASH"]="filehash"
+
+    config["type"]["hostdate"]="date"
+    config["type"]["guestdate"]="date"
+    config["type"]["moddate"]="date"
+    config["type"]["filepath"]="string"
+    config["type"]["filetype"]="string"
+    config["type"]["datum"]="string"
+
+    config["root"]="datum"
+
+    config["parent"]["hostdate"]="datum"
+    config["parent"]["hostname"]="datum"
+    config["parent"]["guestdate"]="datum"
+    config["parent"]["guestname"]="datum"
+    config["parent"]["tag"]="datum"
+    config["parent"]["privacy"]="datum"
+    config["parent"]["filepath"]="datum"
+    config["parent"]["filesize"]="filepath"
+    config["parent"]["filetype"]="filepath"
+    config["parent"]["filehash"]="filepath"
+    config["parent"]["moddate"]="filepath"
     counter=0;
 }
 # heading line
@@ -1884,7 +1753,8 @@ test_lookup_prints_value() {
     },
     "filepath": {
         "parent": "datum",
-        "label": "FILE_PATH"
+        "label": "FILE_PATH",
+        "type": "string"
     },
     "moddate": {
         "parent": "filepath",
