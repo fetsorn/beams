@@ -227,14 +227,15 @@ build_prop () {
 
     # query config for the name of the folder
     # that has the index file of the property
-    local propdir=$(jq -r ".$prop.dir" "$config")
+    local propdir
+    propdir=$(jq -r ".$prop.dir" "$config")
     if [ ! "$propdir" ] || [ "$propdir" == "null" ]; then
         # by default the name of the folder
         # is the same as the property name
         propdir="$prop"
     fi
 
-    local prop_uuid=""
+    local prop_uuid
 
     # when property is root
     # $root_uuid is passed instead of $parent_uuid
@@ -242,13 +243,14 @@ build_prop () {
         prop_uuid="$2"
     else
         # lookup $prop_uuid associated with $parent_uuid
-        local pair="$metadir/pairs/$parent-$prop.csv"
+        local pair
+        pair="$metadir/pairs/$parent-$prop.csv"
         if [ -f "$pair" ]; then
             prop_uuid=$(bash "$SCRIPTS/lookup" "$pair" "$parent_uuid")
         fi
     fi
 
-    local prop_value=""
+    local prop_value
 
     # continue only if $prop_uuid was found
     if [ "$prop_uuid" ]; then
@@ -264,7 +266,8 @@ build_prop () {
 
         # query config for the label
         # to use in the org-mode property
-        local prop_label=$(jq -r ".$prop.label" "$config")
+        local prop_label
+        prop_label=$(jq -r ".$prop.label" "$config")
         if [ ! "$prop_label" ]; then
             # by default the label
             # is the same as the property name
@@ -314,7 +317,8 @@ build_node () {
     printf 1>&2 "                build: %-6s parts\r" "$counter"
 
     # continue only if the requested uuid is in metadir
-    local root_uuid=$(grep -o "$stdin_uuid" "$metadir/props/$root/index.csv")
+    local root_uuid
+    root_uuid=$(grep -o "$stdin_uuid" "$metadir/props/$root/index.csv")
     if [ ! "$root_uuid" ]; then
         return
     fi
@@ -341,7 +345,8 @@ build_node () {
         # get the last element of queue
         local prop=${props[-1]}
         # get its parent property
-        local parent=$(jq -r ".$prop.parent" "$config")
+        local parent
+        parent=$(jq -r ".$prop.parent" "$config")
         if [ ${processed[$prop]} ] || [ ! "$parent" ]; then
             # if processed or has no parent
             # do nothing
@@ -382,7 +387,7 @@ else
     while read -r line; do
         build_node "$line" "$counter";
         counter=$((counter + 1));
-    done <<< $(cat "$metadir/props/$root/index.csv" | cut -c 1-64)
+    done <<< "$(cat "$metadir/props/$root/index.csv" | cut -c 1-64)"
 fi
 
 # output a newline to stderr
