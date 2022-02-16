@@ -1929,7 +1929,7 @@ code() {
 # test_build-biorg_fails_when_no_metadir() {}
 test_build-biorg_succeeds() {
     code
-    assert "bash $script $metadir $config \"hostname hostdate guestname guestdate filepath filesize\""
+    assert "bash $script -d $metadir -c $config -p \"hostname hostdate guestname guestdate filepath filesize\""
 }
 test_build-biorg_prints() {
     code
@@ -1940,7 +1940,7 @@ test_build-biorg_prints() {
 :END:
 value1
 EOF
-    assert_equals "$(mock)" "$(bash $script $metadir $config "hostname hostdate guestname guestdate filepath filesize")"
+    assert_equals "$(mock)" "$(bash $script -d $metadir -c $config -p "hostname hostdate guestname guestdate filepath filesize")"
 }
 
 teardown_suite() {
