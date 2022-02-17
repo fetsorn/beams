@@ -816,106 +816,94 @@ function trim_timestamp(prop_value) {
 
     return prop_value
 }
-# TODO add support for hash, only pair and no index
-# TODO add support for datum, only index and no pair
-function write_prop(prop, prop_label, prop_dir, parent, parent_uuid) {
-    prop_value = props[prop_label]
+function write_prop(prop, prop_dir, parent, parent_uuid) {
+    prop_value = values[prop]
     if (prop_value != "") {
 
         if (config["type"][prop] == "date") {
             prop_value = trim_timestamp(prop_value);
         };
 
-        # string can contain arbitrary characters
-        # so it is wrapped in single quotes when passed to bash pipes
-        # escape the single quotes inside the raw string here
         prop_value_bash = prop_value
         if (config["type"][prop] == "string") {
+            # string can contain arbitrary characters
+            # so it is wrapped in single quotes when passed to bash pipes
+            # escape the single quotes inside the raw string here
             gsub("'", "'\"'\"'", prop_value_bash);
         };
 
-        prop_uuid_cmd = "printf '%s' '" prop_value_bash "' | sha256sum | cut -c 1-64";
-        prop_uuid_cmd | getline prop_uuid;
+        if (prop == config["root"]) {
+            prop_uuid = values["uuid"];
+            # if no prop_uuid is provided, generate unique uuid
+            if (prop_uuid == "") {
+                prop_uuid_cmd = "uuidgen | sha256sum | cut -c 1-64";
+                prop_uuid_cmd | getline prop_uuid_new;
+                prop_uuid = prop_uuid_new;
+                close(prop_uuid_cmd);
+            }
+        } else if (config["type"][prop] == "hash") {
+            prop_uuid = prop_value;
+        } else {
+            prop_uuid_cmd = "printf '%s' '" prop_value_bash "' | sha256sum | cut -c 1-64";
+            prop_uuid_cmd | getline prop_uuid_new;
+            prop_uuid = prop_uuid_new;
+            close(prop_uuid_cmd);
+        }
+        uuids[prop]=prop_uuid;
 
         system("mkdir -p " temp "/pairs " temp "/props/" prop_dir)
 
         prop_value_escaped = prop_value;
         if (config["type"][prop] == "string") {
-            prop_value_escaped = escape_json(prop_value);
+            # strip trailing newlines
+            # to avoid unexpected stripping later
+            gsub(/\n*$/, "", prop_value_escaped);
+            # escape as a json string
+            prop_value_escaped = escape_json(prop_value_escaped);
         };
 
-        # write prop_uuid,prop_value to metadir/props/${prop_dir}/index.csv
-        prop_index = temp "/props/" prop_dir "/index.csv";
-        printf "%s,%s\n", prop_uuid, prop_value_escaped >> prop_index;
+        if (config["type"][prop] != "hash") {
+            # write prop_uuid,prop_value to metadir/props/${prop_dir}/index.csv
+            prop_index = temp "/props/" prop_dir "/index.csv";
+            printf "%s,%s\n", prop_uuid, prop_value_escaped >> prop_index;
+        }
 
-        # write parent_uuid,prop_uuid to metadir/pairs/datum-guestname.csv
-        prop_pair = temp "/pairs/" parent "-" prop ".csv";
-        printf "%s,%s\n", parent_uuid, prop_uuid >> prop_pair;
-
-        close(prop_uuid_cmd);
+        if (prop != config["root"]) {
+            # write parent_uuid,prop_uuid to metadir/pairs/datum-guestname.csv
+            prop_pair = temp "/pairs/" parent "-" prop ".csv";
+            printf "%s,%s\n", parent_uuid, prop_uuid >> prop_pair;
+        }
     }
 }
 function write_node(temp, datum) {
 
-    # printf "%s\n", datum > "/dev/stderr";
+    write_prop("datum", "datum", "", "")
 
-    # strip trailing newlines from datum here
-    # to avoid unexpected stripping later
-    gsub(/\n*$/, "", datum);
-    datum_escaped = escape_json(datum);
+    write_prop("guestname", "name", config["parent"]["guestname"], uuids[config["parent"]["guestname"]])
 
-    # printf "%s\n", datum_escaped > "/dev/stderr";
+    write_prop("guestdate", "date", config["parent"]["guestdate"], uuids[config["parent"]["guestdate"]])
 
-    datum_uuid = props["UUID"];
-    # if no datum_uuid is provided, generate unique uuid
-    if (datum_uuid == "") {
-        datum_uuid_cmd = "uuidgen | sha256sum | cut -c 1-64";
-        datum_uuid_cmd | getline datum_uuid_new;
-        datum_uuid = datum_uuid_new;
-        close(datum_uuid_cmd);
+    write_prop("hostname", "name", config["parent"]["hostname"], uuids[config["parent"]["hostname"]])
+
+    write_prop("hostdate", "date", config["parent"]["hostdate"], uuids[config["parent"]["hostdate"]])
+
+    write_prop("privacy", "privacy", config["parent"]["privacy"], uuids[config["parent"]["privacy"]])
+
+    write_prop("tag", "tag", config["parent"]["tag"], uuids[config["parent"]["tag"]])
+
+    write_prop("filepath", "filepath", config["parent"]["filepath"], uuids[config["parent"]["filepath"]])
+
+    # TODO replace with (config["parent"][prop] != "")
+    if (values["filepath"] != "") {
+
+        write_prop("filesize", "filesize", config["parent"]["filesize"], uuids[config["parent"]["filesize"]])
+
+        write_prop("filetype", "filetype", config["parent"]["filetype"], uuids[config["parent"]["filetype"]])
+
+        write_prop("moddate", "date", config["parent"]["moddate"], uuids[config["parent"]["moddate"]])
+
+        write_prop("filehash", "", config["parent"]["filehash"], uuids[config["parent"]["filehash"]])
     }
-
-    system("mkdir -p " temp "/props/datum")
-
-    # write datum_uuid,datum to metadir/props/datum/index.csv
-    datum_index = temp "/props/datum/index.csv";
-    printf "%s,%s\n", datum_uuid, datum_escaped >> datum_index;
-
-    # datum_escaped no longer needed
-    close(datum_escaped_cmd);
-
-    write_prop("guestname", "GUEST_NAME", "name", "datum", datum_uuid)
-
-    write_prop("guestdate", "GUEST_DATE", "date", "datum", datum_uuid)
-
-    write_prop("hostname", "HOST_NAME", "name", "datum", datum_uuid)
-
-    write_prop("hostdate", "HOST_DATE", "date", "datum", datum_uuid)
-
-    write_prop("privacy", "PRIVACY", "privacy", "datum", datum_uuid)
-
-    write_prop("tag", "TAG", "tag", "datum", datum_uuid)
-
-    if (props["FILE_PATH"] != "") {
-
-        write_prop("filepath", "FILE_PATH", "filepath", "datum", datum_uuid)
-
-        write_prop("filesize", "FILE_SIZE", "filesize", "filepath", datum_uuid)
-        write_prop("filetype", "FILE_TYPE", "filetype", "filepath", datum_uuid)
-        write_prop("moddate", "MOD_DATE", "date", "filepath", datum_uuid)
-
-        # if (filehash != "") {
-
-        #     system("mkdir -p " temp "/pairs")
-
-        #     # write filepath_uuid,filehash to metadir/pairs/filepath-filehash.csv
-        #     filepath_filehash_pair = temp "/pairs/filepath-filehash.csv";
-        #     printf "%s,%s\n", filepath_uuid, filehash >> filepath_filehash_pair;
-        # } # filehash
-
-        # filepath_uuid no longer needed
-        close(filepath_uuid_cmd);
-    } # filepath
 }
 BEGIN {
     temp_cmd = "mktemp -d"
@@ -932,6 +920,7 @@ BEGIN {
     config["name"]["FILE_SIZE"]="filesize"
     config["name"]["FILE_TYPE"]="filetype"
     config["name"]["FILE_HASH"]="filehash"
+    config["name"]["UUID"]="uuid"
 
     config["type"]["hostdate"]="date"
     config["type"]["guestdate"]="date"
@@ -939,6 +928,7 @@ BEGIN {
     config["type"]["filepath"]="string"
     config["type"]["filetype"]="string"
     config["type"]["datum"]="string"
+    config["type"]["filehash"]="hash"
 
     config["root"]="datum"
 
@@ -960,7 +950,8 @@ BEGIN {
     afterheading=1
     # write previous node
     if (node==1) {
-        write_node(temp, datum);
+        values[config["root"]]=datum
+        write_node(temp);
     }
     # remember to write node on the next heading
     node=1;
@@ -968,7 +959,8 @@ BEGIN {
     counter++;
     printf "%s\r", counter >> "/dev/stderr";
     # delete previous node's props and datum
-    delete props;
+    delete values;
+    delete uuids;
     datum="";
     next;
 }
@@ -990,13 +982,12 @@ BEGIN {
         line=$0;
         gsub("^:", "", line);
         st = index(line,":");
-        prop_name = substr(line,1,st-1);
+        prop_label = substr(line,1,st-1);
         prop_value = substr(line,st+1);
         # trim whitespace
         gsub("^[ \t]+", "", prop_value);
         gsub("[ \t]+$", "", prop_value);
-        printf "%s=%s\n", prop_name, prop_value >> "/dev/stderr"
-        props[prop_name]=prop_value;
+        values[config["name"][prop_label]]=prop_value;
         next;
     }
 }
@@ -1007,7 +998,8 @@ BEGIN {
 END {
     # write last node
     if (node==1) {
-        write_node(temp, datum);
+        values[config["root"]]=datum
+        write_node(temp);
     }
     printf "%s\n", temp;
 }
@@ -1698,10 +1690,10 @@ code() {
 }
 
 test_lookup_fails_without_args() {
-    assert_fail scripts/lookup
+    assert_fail $script
 }
 test_lookup_fails_with_one_arg() {
-    assert_fail scripts/lookup $(mktemp)
+    assert_fail $script $(mktemp)
 }
 test_lookup_succeeds_with_two_args() {
     code
@@ -1770,6 +1762,10 @@ test_lookup_prints_value() {
     "filesize": {
         "parent": "filepath",
         "label": "FILE_SIZE"
+    },
+    "filehash": {
+        "parent": "filepath",
+        "label": "FILE_HASH"
     }
 }
 #+end_src
@@ -1882,53 +1878,67 @@ value1="value1"
 uuid2="0bb6648436e480468413313bce468453d5657fb9f8aa4b6e98c719b83415b0ae"
 value2="value2"
 
-code() {
-    testdir=$(mktemp -d)
-    export testdir
+setup() {
     biorg=$(mktemp)
     export biorg
-    fake mock << EOF
+    fake biorg << EOF
 ,* .
 :PROPERTIES:
 :UUID: 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704
 :HOST_DATE: <2001-01-01>
+:FILE_PATH: path/to/1
+:FILE_HASH: 7346896c0ac9b7404de14c7402ed06c1892d7429f24c69e8f0f7bcec6440b7ef
 :TAG: tag
 :END:
 value1
 ,* .
 :PROPERTIES:
-:UUID: 0bb6648436e480468413313bce468453d5657fb9f8aa4b6e98c719b83415b0ae
 :HOST_DATE: <2002-01-01>
+:FILE_PATH: path/to/2
+:FILE_HASH: 023b9dfa450e761b1a4ffcf9dd34a2fde273d78c5914957dfe39153aaca8a629
 :TAG: tag
 :END:
 value2
 EOF
-    mock >> $biorg
+    biorg >> $biorg
+
+    printf "0" > "/tmp/counter"
+    _uuidgen() {
+        if [ $(cat "/tmp/counter") == "0" ]; then
+            printf "1A73DBDA-85E0-404A-9104-735602EF5F74\n"
+            # b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e
+            printf "1" > "/tmp/counter"
+        else
+            printf "3C128750-4D98-4A28-AFCD-0BDDAA77C632\n"
+            # f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265
+        fi
+    }
+    export -f _uuidgen
 }
 
 test_break-biorg_succeeds() {
-    code
     assert "awk -f $script $biorg &>/dev/null"
 }
 test_break-biorg_prints() {
-    code
+    testdir=$(mktemp -d)
     fake mktemp <<< "$testdir"
     assert_equals "$testdir" "$(awk -f $script $biorg 2>/dev/null)"
 }
+test_break-biorg_stderr() {
+    awk -f $script $biorg 2>&1 >/dev/null
+    assert true
+}
 test_break-biorg_writes_datum_index() {
-    code
-    fake mktemp <<< "$testdir"
-    awk -f $script $biorg &>/dev/null
+    fake uuidgen _uuidgen
+    testdir=$(awk -f $script $biorg 2>/dev/null)
     fake mock << EOF
 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,\"value1\"
-0bb6648436e480468413313bce468453d5657fb9f8aa4b6e98c719b83415b0ae,\"value2\"
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,\"value2\"
 EOF
     assert_equals "$(mock)" "$(cat $testdir/props/datum/index.csv)"
 }
 test_break-biorg_writes_date_index() {
-    code
-    fake mktemp <<< "$testdir"
-    awk -f $script $biorg &>/dev/null
+    testdir=$(awk -f $script $biorg 2>/dev/null)
     fake mock << EOF
 4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d,2001-01-01
 161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc,2002-01-01
@@ -1936,19 +1946,16 @@ EOF
     assert_equals "$(mock)" "$(cat $testdir/props/date/index.csv)"
 }
 test_break-biorg_writes_date_pair() {
-    code
-    fake mktemp <<< "$testdir"
-    awk -f $script $biorg &>/dev/null
+    fake uuidgen _uuidgen
+    testdir=$(awk -f $script $biorg 2>/dev/null)
     fake mock << EOF
 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d
-0bb6648436e480468413313bce468453d5657fb9f8aa4b6e98c719b83415b0ae,161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc
 EOF
     assert_equals "$(mock)" "$(cat $testdir/pairs/datum-hostdate.csv)"
 }
 test_break-biorg_writes_tag_index() {
-    code
-    fake mktemp <<< "$testdir"
-    awk -f $script $biorg &>/dev/null
+    testdir=$(awk -f $script $biorg 2>/dev/null)
     fake mock << EOF
 2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
 2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
@@ -1956,13 +1963,25 @@ EOF
     assert_equals "$(mock)" "$(cat $testdir/props/tag/index.csv)"
 }
 test_break-biorg_writes_tag_pair() {
-    code
-    fake mktemp <<< "$testdir"
-    awk -f $script $biorg &>/dev/null
+    fake uuidgen _uuidgen
+    testdir=$(awk -f $script $biorg 2>/dev/null)
     fake mock << EOF
 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
-0bb6648436e480468413313bce468453d5657fb9f8aa4b6e98c719b83415b0ae,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
 EOF
     assert_equals "$(mock)" "$(cat $testdir/pairs/datum-tag.csv)"
+}
+test_break-biorg_does_not_write_filehash_index() {
+    testdir=$(awk -f $script $biorg)
+    assert_fail "test -d $testdir/props/filehash"
+}
+test_break-biorg_writes_filehash_pair() {
+    fake uuidgen _uuidgen
+    testdir=$(awk -f $script $biorg 2>/dev/null)
+    fake mock << EOF
+01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,7346896c0ac9b7404de14c7402ed06c1892d7429f24c69e8f0f7bcec6440b7ef
+424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,023b9dfa450e761b1a4ffcf9dd34a2fde273d78c5914957dfe39153aaca8a629
+EOF
+    assert_equals "$(mock)" "$(cat $testdir/pairs/filepath-filehash.csv)"
 }
 #+end_src
