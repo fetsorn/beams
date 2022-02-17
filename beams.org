@@ -917,14 +917,20 @@ BEGIN {
     __KEYS="\3";
     __jawk__init();
 
-    # TODO get config from variable
     # TODO fallback CONFIG to pwd
-    CONFIG="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
+    if (CONFIG == "") {
+        print "No config provided" > "/dev/stderr"
+        exit 1
+    }
+    # use jawk to parse json into an associative array _
+    # to get value of key2 of object key1 call _["key1","key2"]
     __parse_json(CONFIG)
 
+    # TODO rewrite to use the jawk array
     config_props_cmd = "jq -r 'keys | join(\" \")' " CONFIG
     config_props_cmd | getline config_props;
 
+    # TODO rewrite to use the jawk array
     root_cmd = "jq -r 'map_values(select(has(\"parent\") | not)) | keys[0]' " CONFIG
     root_cmd | getline config_root;
 
@@ -978,6 +984,7 @@ BEGIN {
             prop = "uuid"
         } else {
             # TODO handle if config doesn't have a label
+            # TODO rewrite to use the jawk array
             label_cmd = "jq -r 'map_values(select(.label == \"" prop_label "\")) | keys[0]' "  CONFIG
             label_cmd | getline prop_new;
             prop = prop_new
@@ -2406,20 +2413,23 @@ EOF
 }
 
 test_break-biorg_succeeds() {
-    assert "awk -f $script $biorg &>/dev/null"
+    assert "awk -f $script -v CONFIG=$config $biorg &>/dev/null"
 }
 test_break-biorg_prints() {
     testdir=$(mktemp -d)
     fake mktemp <<< "$testdir"
-    assert_equals "$testdir" "$(awk -f $script $biorg 2>/dev/null)"
+    assert_equals "$testdir" "$(awk -f $script -v CONFIG=$config $biorg 2>/dev/null)"
 }
 test_break-biorg_stderr() {
-    awk -f $script $biorg 2>&1 >/dev/null
+    awk -f $script -v CONFIG=$config $biorg 2>&1 >/dev/null
     assert true
+}
+test_break-biorg_fails_without_config() {
+    assert_fails "awk -f $script $biorg 2>/dev/null"
 }
 test_break-biorg_writes_datum_index() {
     fake uuidgen _uuidgen
-    testdir=$(awk -f $script $biorg 2>/dev/null)
+    testdir=$(awk -f $script -v CONFIG=$config $biorg 2>/dev/null)
     fake mock << EOF
 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,\"value1\"
 b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,\"value2\"
@@ -2428,7 +2438,7 @@ EOF
     assert_equals "$(mock)" "$(cat $testdir/props/datum/index.csv)"
 }
 test_break-biorg_writes_date_index() {
-    testdir=$(awk -f $script $biorg 2>/dev/null)
+    testdir=$(awk -f $script -v CONFIG=$config $biorg 2>/dev/null)
     fake mock << EOF
 4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d,2001-01-01
 161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc,2002-01-01
@@ -2438,7 +2448,7 @@ EOF
 }
 test_break-biorg_writes_date_pair() {
     fake uuidgen _uuidgen
-    testdir=$(awk -f $script $biorg 2>/dev/null)
+    testdir=$(awk -f $script -v CONFIG=$config $biorg 2>/dev/null)
     fake mock << EOF
 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d
 b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc
@@ -2447,7 +2457,7 @@ EOF
     assert_equals "$(mock)" "$(cat $testdir/pairs/datum-hostdate.csv)"
 }
 test_break-biorg_writes_tag_index() {
-    testdir=$(awk -f $script $biorg 2>/dev/null)
+    testdir=$(awk -f $script -v CONFIG=$config $biorg 2>/dev/null)
     fake mock << EOF
 2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
 2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
@@ -2457,7 +2467,7 @@ EOF
 }
 test_break-biorg_writes_tag_pair() {
     fake uuidgen _uuidgen
-    testdir=$(awk -f $script $biorg 2>/dev/null)
+    testdir=$(awk -f $script -v CONFIG=$config $biorg 2>/dev/null)
     fake mock << EOF
 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
 b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
@@ -2466,12 +2476,12 @@ EOF
     assert_equals "$(mock)" "$(cat $testdir/pairs/datum-tag.csv)"
 }
 test_break-biorg_does_not_write_filehash_index() {
-    testdir=$(awk -f $script $biorg)
+    testdir=$(awk -f $script -v CONFIG=$config $biorg)
     assert_fail "test -d $testdir/props/filehash"
 }
 test_break-biorg_writes_filehash_pair() {
     fake uuidgen _uuidgen
-    testdir=$(awk -f $script $biorg 2>/dev/null)
+    testdir=$(awk -f $script -v CONFIG=$config $biorg 2>/dev/null)
     fake mock << EOF
 01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,7346896c0ac9b7404de14c7402ed06c1892d7429f24c69e8f0f7bcec6440b7ef
 424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,023b9dfa450e761b1a4ffcf9dd34a2fde273d78c5914957dfe39153aaca8a629
@@ -2479,7 +2489,7 @@ EOF
     assert_equals "$(mock)" "$(cat $testdir/pairs/filepath-filehash.csv)"
 }
 test_break-biorg_writes_filepath_index() {
-    testdir=$(awk -f $script $biorg 2>/dev/null)
+    testdir=$(awk -f $script -v CONFIG=$config $biorg 2>/dev/null)
     fake mock << EOF
 01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,\"path/to/1\"
 424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,\"path/to/2\"
@@ -2488,7 +2498,7 @@ EOF
 }
 test_break-biorg_writes_filepath_pair() {
     fake uuidgen _uuidgen
-    testdir=$(awk -f $script $biorg 2>/dev/null)
+    testdir=$(awk -f $script -v CONFIG=$config $biorg 2>/dev/null)
     fake mock << EOF
 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee
 b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865
