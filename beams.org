@@ -810,6 +810,8 @@ function escape_json(str) {
     return "\42" str "\42"
 }
 function set_uuid(prop,       prop_value_bash, prop_uuid) {
+
+    if (parsed[prop] == 0) { return }
     prop_value_bash = values[prop]
     if (config["type"][prop] == "string") {
         # string can contain arbitrary characters
