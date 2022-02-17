@@ -816,7 +816,7 @@ function trim_timestamp(prop_value) {
 
     return prop_value
 }
-function write_prop(prop, prop_dir, parent, parent_uuid) {
+function write_prop(prop, parent, parent_uuid) {
     prop_value = values[prop]
     if (prop_value != "") {
 
@@ -851,7 +851,7 @@ function write_prop(prop, prop_dir, parent, parent_uuid) {
         }
         uuids[prop]=prop_uuid;
 
-        system("mkdir -p " temp "/pairs " temp "/props/" prop_dir)
+
 
         prop_value_escaped = prop_value;
         if (config["type"][prop] == "string") {
@@ -863,46 +863,54 @@ function write_prop(prop, prop_dir, parent, parent_uuid) {
         };
 
         if (config["type"][prop] != "hash") {
+            prop_dir = config["dir"][prop]
+            if (prop_dir == "") { prop_dir = prop }
+            system("mkdir -p " temp "/props/" prop_dir)
             # write prop_uuid,prop_value to metadir/props/${prop_dir}/index.csv
             prop_index = temp "/props/" prop_dir "/index.csv";
             printf "%s,%s\n", prop_uuid, prop_value_escaped >> prop_index;
         }
 
         if (prop != config["root"]) {
+            system("mkdir -p " temp "/pairs")
             # write parent_uuid,prop_uuid to metadir/pairs/datum-guestname.csv
             prop_pair = temp "/pairs/" parent "-" prop ".csv";
             printf "%s,%s\n", parent_uuid, prop_uuid >> prop_pair;
         }
     }
 }
-function write_node(temp, datum) {
+function write_node() {
 
-    write_prop("datum", "datum", "", "")
+    # get a list of props from config
+    # if parent is processed, write_prop
+    # otherwise push to queue
 
-    write_prop("guestname", "name", config["parent"]["guestname"], uuids[config["parent"]["guestname"]])
+    write_prop("datum", "", "")
 
-    write_prop("guestdate", "date", config["parent"]["guestdate"], uuids[config["parent"]["guestdate"]])
+    write_prop("guestname", config["parent"]["guestname"], uuids[config["parent"]["guestname"]])
 
-    write_prop("hostname", "name", config["parent"]["hostname"], uuids[config["parent"]["hostname"]])
+    write_prop("guestdate", config["parent"]["guestdate"], uuids[config["parent"]["guestdate"]])
 
-    write_prop("hostdate", "date", config["parent"]["hostdate"], uuids[config["parent"]["hostdate"]])
+    write_prop("hostname", config["parent"]["hostname"], uuids[config["parent"]["hostname"]])
 
-    write_prop("privacy", "privacy", config["parent"]["privacy"], uuids[config["parent"]["privacy"]])
+    write_prop("hostdate", config["parent"]["hostdate"], uuids[config["parent"]["hostdate"]])
 
-    write_prop("tag", "tag", config["parent"]["tag"], uuids[config["parent"]["tag"]])
+    write_prop("privacy", config["parent"]["privacy"], uuids[config["parent"]["privacy"]])
 
-    write_prop("filepath", "filepath", config["parent"]["filepath"], uuids[config["parent"]["filepath"]])
+    write_prop("tag", config["parent"]["tag"], uuids[config["parent"]["tag"]])
+
+    write_prop("filepath", config["parent"]["filepath"], uuids[config["parent"]["filepath"]])
 
     # TODO replace with (config["parent"][prop] != "")
     if (values["filepath"] != "") {
 
-        write_prop("filesize", "filesize", config["parent"]["filesize"], uuids[config["parent"]["filesize"]])
+        write_prop("filesize", config["parent"]["filesize"], uuids[config["parent"]["filesize"]])
 
-        write_prop("filetype", "filetype", config["parent"]["filetype"], uuids[config["parent"]["filetype"]])
+        write_prop("filetype", config["parent"]["filetype"], uuids[config["parent"]["filetype"]])
 
-        write_prop("moddate", "date", config["parent"]["moddate"], uuids[config["parent"]["moddate"]])
+        write_prop("moddate", config["parent"]["moddate"], uuids[config["parent"]["moddate"]])
 
-        write_prop("filehash", "", config["parent"]["filehash"], uuids[config["parent"]["filehash"]])
+        write_prop("filehash", config["parent"]["filehash"], uuids[config["parent"]["filehash"]])
     }
 }
 BEGIN {
@@ -943,6 +951,12 @@ BEGIN {
     config["parent"]["filetype"]="filepath"
     config["parent"]["filehash"]="filepath"
     config["parent"]["moddate"]="filepath"
+
+    config["dir"]["hostdate"]="date"
+    config["dir"]["hostname"]="name"
+    config["dir"]["guestdate"]="date"
+    config["dir"]["guestname"]="name"
+    config["dir"]["moddate"]="moddate"
     counter=0;
 }
 # heading line
@@ -951,7 +965,7 @@ BEGIN {
     # write previous node
     if (node==1) {
         values[config["root"]]=datum
-        write_node(temp);
+        write_node();
     }
     # remember to write node on the next heading
     node=1;
@@ -999,7 +1013,7 @@ END {
     # write last node
     if (node==1) {
         values[config["root"]]=datum
-        write_node(temp);
+        write_node();
     }
     printf "%s\n", temp;
 }
