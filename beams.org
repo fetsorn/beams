@@ -226,16 +226,6 @@ build_prop () {
     local parent_uuid="$2"
     local prop="$3"
 
-    # query config for the name of the folder
-    # that has the index file of the property
-    local propdir
-    propdir=$(jq -r ".$prop.dir" "$config")
-    if [ ! "$propdir" ] || [ "$propdir" == "null" ]; then
-        # by default the name of the folder
-        # is the same as the property name
-        propdir="$prop"
-    fi
-
     local prop_uuid
 
     # when property is root
@@ -251,10 +241,29 @@ build_prop () {
         fi
     fi
 
+    # set uuid as a global variable
+    # that can be accessed after this function returns
+    # if no $prop_uuid was found,
+    # assign an empty string to reset
+    # so the values don't become mixed up
+    # between calls to build_prop
+    declare -n UUID="${prop}_uuid"
+    UUID="$prop_uuid"
+
     local prop_value
 
     # continue only if $prop_uuid was found
     if [ "$prop_uuid" ]; then
+        # query config for the name of the folder
+        # that has the index file of the property
+        local propdir
+        propdir=$(jq -r ".$prop.dir" "$config")
+        if [ ! "$propdir" ] || [ "$propdir" == "null" ]; then
+            # by default the name of the folder
+            # is the same as the property name
+            propdir="$prop"
+        fi
+
         # lookup the value associated with $prop_uuid
         prop_value=$(bash "$SCRIPTS/lookup" "$metadir/props/$propdir/index.csv" "$prop_uuid")
 
@@ -288,17 +297,6 @@ build_prop () {
         fi
 
     fi
-
-    # set uuid and value as global variables
-    # that can be accessed after this function returns
-    # if no $prop_uuid was found,
-    # assign empty strings to the variables
-    # so the values don't become mixed up
-    # between calls to build_prop
-    declare -n VALUE="$prop"
-    declare -n UUID="${prop}_uuid"
-    VALUE="$prop_value"
-    UUID="$prop_uuid"
 }
 export -f build_prop
 
