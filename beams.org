@@ -144,7 +144,7 @@ cat <&0 | jq -r
 #!/bin/bash
 
 usage () {
-  printf 1>&2 "%s\n" "Usage: $0 [METADIR] [CONFIG] [PROPS]
+  printf 1>&2 "%s\n" "Usage: $0 [-c CONFIG] [-d METADIR] [-p PROPS]
 
   Reads a stream of datum_uuid,datum pairs from stdin
   looks up PROPS in METADIR (all properties in  by default)
@@ -199,7 +199,7 @@ if [[ ! -f "$config" ]]; then
 fi
 
 # get the list of all property names as a space-separated string
-if [ "$config_props" ]; then
+if [ ! "$config_props" ]; then
     config_props=$(jq -r 'keys | join(" ")' "$config")
 fi
 
@@ -217,7 +217,6 @@ if [ ! "$root" ]; then
   exit 3
 fi
 
-# TODO add support for hash, only pair and no index
 # build_prop PARENT PARENT_UUID PROP
 # build_prop "datum" "12401595" "hostname"
 # set two variables, ${PROP} and ${PROP}_uuid
@@ -256,24 +255,29 @@ build_prop () {
 
     # continue only if $prop_uuid was found
     if [ "$prop_uuid" ]; then
-        # query config for the name of the folder
-        # that has the index file of the property
-        local propdir
-        propdir=$(jq -r ".$prop.dir" "$config")
-        if [ ! "$propdir" ] || [ "$propdir" == "null" ]; then
-            # by default the name of the folder
-            # is the same as the property name
-            propdir="$prop"
-        fi
 
-        # lookup the value associated with $prop_uuid
-        prop_value=$(bash "$SCRIPTS/lookup" "$metadir/props/$propdir/index.csv" "$prop_uuid")
-
-        # get the type of property value from the config
         prop_type=$(jq -r ".$prop.type" "$config")
-        # if property value is an escaped string, unescape it
-        if [ "$prop_type" == "string" ]; then
-            prop_value=$(printf "%s" "$prop_value" | bash "$SCRIPTS/unescape")
+        if [ "$prop_type" == "hash" ]; then
+            prop_value="$prop_uuid"
+        else
+            # query config for the name of the folder
+            # that has the index file of the property
+            local propdir
+            propdir=$(jq -r ".$prop.dir" "$config")
+            if [ ! "$propdir" ] || [ "$propdir" == "null" ]; then
+                # by default the name of the folder
+                # is the same as the property name
+                propdir="$prop"
+            fi
+
+            # lookup the value associated with $prop_uuid
+            prop_value=$(bash "$SCRIPTS/lookup" "$metadir/props/$propdir/index.csv" "$prop_uuid")
+
+            prop_type=$(jq -r ".$prop.type" "$config")
+            # if property value is an escaped string, unescape it
+            if [ "$prop_type" == "string" ]; then
+                prop_value=$(printf "%s" "$prop_value" | bash "$SCRIPTS/unescape")
+            fi
         fi
 
         # query config for the label
@@ -342,6 +346,8 @@ build_node () {
     local "${root}_uuid"="$root_uuid"
     processed["$root"]=1
 
+    # TODO process queue from the start
+    #      to avoid reverse order in output
     # while queue if full
     while (( ${#props[@]} != 0 )); do
         # get the last element of queue
