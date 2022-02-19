@@ -1660,6 +1660,19 @@ _gc "$metadir/props/tag/index.csv" "$tag_pairs"
 #+begin_src sh :tangle scripts/merge :tangle-mode (identity #o755)
 #!/bin/bash
 
+usage () {
+  printf 1>&2 "%s\n" "Usage: $0 NEW MAIN [-c CONFIG]
+
+  Merges NEW metadir into MAIN
+
+  OPTIONS:
+  -c json file which contains the schema of properties and relations between them
+     defaults to \$PWD/metadir.json
+
+  EXAMPLE:
+    $0 \"../ops/inbox\" \"./metadir\" > index.json"
+}
+
 OPTIND=1
 while getopts 'c:' opt; do
   case $opt in
@@ -1671,12 +1684,7 @@ done
 shift "$(( OPTIND - 1 ))"
 
 if [ $# -ne 2 ]; then
-  printf 1>&2 "%s\n" "Usage: $0 NEW MAIN
-
-  Merges NEW metadir into MAIN
-
-  EXAMPLE:
-    $0 \"../ops/inbox\" \"./metadir\" > index.json"
+  usage
   exit 3
 fi
 
@@ -1736,7 +1744,7 @@ export -f update_file
 read -r -a props <<< "$config_props"
 for prop in "${props[@]}"; do
     prop_type=$(jq -r ".$prop.type" "$config")
-    # if not root
+    # hash has no index
     if [ "$prop_type" != "hash" ]; then
         prop_dir=$(jq -r ".$prop.dir" "$config")
         if [ ! "$prop_dir" ] || [ "$prop_dir" == "null" ]; then
@@ -1745,7 +1753,8 @@ for prop in "${props[@]}"; do
         # update index
         update_file "props/$prop_dir/index.csv"
     fi
-    # if not hash
+    # TODO support recursive root
+    # root has no pair
     if [ "$prop" != "$root" ]; then
         parent=$(jq -r ".$prop.parent" "$config")
         # update pair
