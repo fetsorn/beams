@@ -58,6 +58,7 @@
         devShell = pkgs.mkShell {
           buildInputs = [
             beams
+            pkgs.jq
             pkgs.ripgrep
             pkgs.coreutils
             pkgs.parallel
