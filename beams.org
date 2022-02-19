@@ -143,6 +143,8 @@ cat <&0 | jq -r
 #+begin_src sh :tangle scripts/build-biorg :tangle-mode (identity #o755)
 #!/bin/bash
 
+# TODO replace jq with jawk
+
 usage () {
   printf 1>&2 "%s\n" "Usage: $0 [-c CONFIG] [-d METADIR] [-p PROPS]
 
@@ -203,6 +205,17 @@ if [ ! "$config_props" ]; then
     config_props=$(jq -r 'keys | join(" ")' "$config")
 fi
 
+# parse parent, type and dir from json config for each prop here once
+declare -A _
+read -r -a props <<< "$config_props"
+for prop in "${props[@]}"; do
+    _["$prop","parent"]=$(jq -r ".$prop.parent" "$config")
+    _["$prop","label"]=$(jq -r ".$prop.label" "$config")
+    _["$prop","type"]=$(jq -r ".$prop.type" "$config")
+    _["$prop","dir"]=$(jq -r ".$prop.dir" "$config")
+done
+unset props
+
 # locate other scripts
 SCRIPTS="${BASH_SOURCE%/*}"
 if [[ ! -d "$SCRIPTS" ]]; then SCRIPTS="$PWD"; fi
@@ -256,14 +269,14 @@ build_prop () {
     # continue only if $prop_uuid was found
     if [ "$prop_uuid" ]; then
 
-        prop_type=$(jq -r ".$prop.type" "$config")
+        prop_type=${_[$prop,"type"]}
         if [ "$prop_type" == "hash" ]; then
             prop_value="$prop_uuid"
         else
             # query config for the name of the folder
             # that has the index file of the property
             local propdir
-            propdir=$(jq -r ".$prop.dir" "$config")
+            propdir=${_[$prop,"dir"]}
             if [ ! "$propdir" ] || [ "$propdir" == "null" ]; then
                 # by default the name of the folder
                 # is the same as the property name
@@ -273,7 +286,6 @@ build_prop () {
             # lookup the value associated with $prop_uuid
             prop_value=$(bash "$SCRIPTS/lookup" "$metadir/props/$propdir/index.csv" "$prop_uuid")
 
-            prop_type=$(jq -r ".$prop.type" "$config")
             # if property value is an escaped string, unescape it
             if [ "$prop_type" == "string" ]; then
                 prop_value=$(printf "%s" "$prop_value" | bash "$SCRIPTS/unescape")
@@ -283,7 +295,7 @@ build_prop () {
         # query config for the label
         # to use in the org-mode property
         local prop_label
-        prop_label=$(jq -r ".$prop.label" "$config")
+        prop_label=${_[$prop,"label"]}
         if [ ! "$prop_label" ]; then
             # by default the label
             # is the same as the property name
@@ -354,7 +366,7 @@ build_node () {
         local prop=${props[-1]}
         # get its parent property
         local parent
-        parent=$(jq -r ".$prop.parent" "$config")
+        parent=${_[$prop,"parent"]}
         if [ ${processed[$prop]} ] || [ ! "$parent" ]; then
             # if processed or has no parent
             # do nothing
@@ -373,6 +385,8 @@ build_node () {
         # remove from queue
         unset -v 'props[-1]'
     done
+
+    unset props
 
     printf ":END:\n"
 
