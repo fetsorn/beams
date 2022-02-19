@@ -207,6 +207,7 @@ fi
 SCRIPTS="${BASH_SOURCE%/*}"
 if [[ ! -d "$SCRIPTS" ]]; then SCRIPTS="$PWD"; fi
 
+# TODO support several roots
 # find a property that doesn't have a parent, treat as root
 # if there are several matching properties, pick the first in alphabetical order
 root=$(jq -r 'map_values(select(has("parent") | not)) | keys[0]' "$config")
@@ -1653,6 +1654,16 @@ _gc "$metadir/props/tag/index.csv" "$tag_pairs"
 #+begin_src sh :tangle scripts/merge :tangle-mode (identity #o755)
 #!/bin/bash
 
+OPTIND=1
+while getopts 'c:' opt; do
+  case $opt in
+    c) config="$OPTARG" ;;
+    ,*) usage
+       exit 1
+  esac
+done
+shift "$(( OPTIND - 1 ))"
+
 if [ $# -ne 2 ]; then
   printf 1>&2 "%s\n" "Usage: $0 NEW MAIN
 
@@ -1666,27 +1677,37 @@ fi
 new="$1"
 main="$2"
 
-append_file () {
-    new="$1"
-    main="$2"
-    csvpath="$3"
+# get the path to the json file which contains
+# the schema of properties and relations between them
+if [ ! "$config" ]; then
+    config="$PWD/metadir.json"
+fi
 
-    printf 1>&2 "append: %s\n" "$csvpath"
-    if [ -f "$new/$csvpath" ]; then
-        comm -13 <(cat "$main/$csvpath" | sort) <(cat "$new/$csvpath" | sort) >> "$main/$csvpath"
-    else
-        printf 1>&2 "skip %s\n" "$csvpath"
-    fi
-}
+# check if config exists
+if [[ ! -f "$config" ]]; then
+  printf 1>&2 "No config at %s\n" "$config"
+  exit 3
+fi
 
-export -f append_file
+# TODO support several roots
+# find a property that doesn't have a parent, treat as root
+# if there are several matching properties, pick the first in alphabetical order
+root=$(jq -r 'map_values(select(has("parent") | not)) | keys[0]' "$config")
+# if there are no matching properties, exit with an error
+if [ ! "$root" ]; then
+  printf 1>&2 "No root property in the config %s\n" "$config"
+  exit 3
+fi
 
+# get the list of all property names as a space-separated string
+config_props=$(jq -r 'keys | join(" ")' "$config")
+
+# remove changed entries from main
+# and only then append changed entries from new
 update_file () {
-    new="$1"
-    main="$2"
-    csvpath="$3"
+    csvpath="$1"
 
-    printf 1>&2 "update: %s\n" "$csvpath"
+    # printf 1>&2 "update: %s\n" "$csvpath"
     if [ -f "$new/$csvpath" ]; then
         # cmd > mktemp and then <(cat | cmd) replaces <(printf $(cmd) | cmd)
         # to fix an inconsistent bug that corrupts multibyte characters
@@ -1699,41 +1720,33 @@ update_file () {
         # remove empty newline in case unchanged_lines is empty
         cat "$unchanged_lines" <(cat "$new/$csvpath" | sort | uniq) | sed '/^$/d' > "$main/$csvpath"
     else
-        printf 1>&2 "skip %s\n" "$csvpath"
+        # printf 1>&2 "skip %s\n" "$csvpath"
+        :
     fi
 }
 
 export -f update_file
 
-# pairs cannot be appended as is
-# because changed entries would conflict with the old
-# instead, remove changed entries from main
-# and only then append changed entries from new
-update_file "$new" "$main" "props/datum/index.csv"
-update_file "$new" "$main" "pairs/datum-filepath.csv"
-update_file "$new" "$main" "pairs/datum-guestdate.csv"
-update_file "$new" "$main" "pairs/datum-guestname.csv"
-update_file "$new" "$main" "pairs/datum-hostdate.csv"
-update_file "$new" "$main" "pairs/datum-hostname.csv"
-update_file "$new" "$main" "pairs/datum-privacy.csv"
-update_file "$new" "$main" "pairs/datum-tag.csv"
-update_file "$new" "$main" "pairs/filepath-filesize.csv"
-update_file "$new" "$main" "pairs/filepath-filetype.csv"
-update_file "$new" "$main" "pairs/filepath-moddate.csv"
-update_file "$new" "$main" "pairs/filepath-filehash.csv"
-
-# the rest is content-addressable so can be appended and garbage collected later
-# but update is faster than garbage collection
-update_file "$new" "$main" "props/date/index.csv"
-update_file "$new" "$main" "props/name/index.csv"
-update_file "$new" "$main" "props/filepath/index.csv"
-update_file "$new" "$main" "props/filesize/index.csv"
-update_file "$new" "$main" "props/filetype/index.csv"
-update_file "$new" "$main" "props/filepath/index.csv"
-update_file "$new" "$main" "props/privacy/index.csv"
-update_file "$new" "$main" "props/tag/index.csv"
+read -r -a props <<< "$config_props"
+for prop in "${props[@]}"; do
+    prop_type=$(jq -r ".$prop.type" "$config")
+    # if not root
+    if [ "$prop_type" != "hash" ]; then
+        prop_dir=$(jq -r ".$prop.dir" "$config")
+        if [ ! "$prop_dir" ] || [ "$prop_dir" == "null" ]; then
+            prop_dir="$prop"
+        fi
+        # update index
+        update_file "props/$prop_dir/index.csv"
+    fi
+    # if not hash
+    if [ "$prop" != "$root" ]; then
+        parent=$(jq -r ".$prop.parent" "$config")
+        # update pair
+        update_file "pairs/$parent-$prop.csv"
+    fi
+done
 #+end_src
-
 ** merge-one
 #+begin_src sh :tangle scripts/merge-one :tangle-mode (identity #o755)
 #!/bin/bash
@@ -2554,8 +2567,8 @@ EOF
 
 ** merge
 #+begin_src sh :tangle tests/test_merge :tangle-mode (identity #o755)
-script="/Users/fetsorn/mm/0---codes/0-beams/scripts/merge"
 config="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
+script="/Users/fetsorn/mm/0---codes/0-beams/scripts/merge -c $config"
 
 setup_main() {
     maindir=$(mktemp -d)
