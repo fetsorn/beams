@@ -2170,30 +2170,78 @@ mkdir -p metadir/pairs metadir/props/{tag,date,datum,filesize,filetype,name,rule
 ** sync
 #+begin_src sh :tangle scripts/sync :tangle-mode (identity #o755)
 
-if [ $# -ne 2 ]; then
-  printf 1>&2 "%s\n" "Usage: $0 INBOX MAIN
+usage() {
+  printf 1>&2 "%s\n" "Usage: $0 INBOX [-c CONFIG] [-d METADIR]
 
-  Syncs metadir MAIN with a INBOX biorg file
+  Syncs METADIR with INBOX biorg file
+
+  OPTIONS:
+  -c json file which contains the schema of properties and relations between them
+     defaults to \$PWD/metadir.json
+  -d folder which contains the index of properties and relations between them
+     defaults to \$PWD/metadir
 
   EXAMPLE:
-    $0 ./inbox.bi.org ./metadir"
+    $0 -d ./metadir -c ./metadir.json ./inbox.bi.org "
+}
+
+OPTIND=1
+while getopts 'c:d:' opt; do
+  case $opt in
+    c) config="$OPTARG" ;;
+    d) metadir="$OPTARG" ;;
+    ,*) usage
+       exit 1
+  esac
+done
+shift "$(( OPTIND - 1 ))"
+
+# if [ $# -lt 1 ]; then
+#   usage
+#   exit 3
+# fi
+
+inbox="$1"
+
+# get the path to the folder which contains
+# the index of properties and relations between them
+if [ ! "$metadir" ]; then
+    metadir="$PWD/metadir"
+fi
+
+# check if metadir exists
+if [[ ! -d "$metadir" ]]; then
+  printf 1>&2 "No metadir at %s\n" "$metadir"
   exit 3
 fi
 
-inbox="$1"
-main="$2"
+# get the path to the json file which contains
+# the schema of properties and relations between them
+if [ ! "$config" ]; then
+    config="$PWD/metadir.json"
+fi
+
+# check if config exists
+if [[ ! -f "$config" ]]; then
+  printf 1>&2 "No config at %s\n" "$config"
+  exit 3
+fi
+
+# locate other scripts
+SCRIPTS="${BASH_SOURCE%/*}"
+if [[ ! -d "$SCRIPTS" ]]; then SCRIPTS="$PWD"; fi
 
 # break biorg
-new=$(cat "$inbox" | bash scripts/break-biorg)
+new=$(cat "$inbox" | awk -f $SCRIPTS/break-biorg.awk -v CONFIG="$config")
 printf 2>&1 "%s\n" "$new"
 # merge metadir
-bash scripts/merge "$new" "$main"
+bash $SCRIPTS/merge -c "$config" "$new" "$metadir"
 # backup biorg
 bk=$(mktemp)
 cp "$inbox" "$bk"
 ln -sf "$bk" sync-bk
 # rebuild biorg
-cat "$new/props/datum/index.csv" | bash scripts/build-biorg > "$inbox"
+bash $SCRIPTS/build-biorg -d "$new" -c "$config" > "$inbox"
 #+end_src
 * tests
 ** lookup
