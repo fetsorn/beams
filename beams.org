@@ -351,7 +351,7 @@ build_node () {
     # associative array
     # to record which properties have been processed
     # TODO declare with `local`?
-    declare -A processed
+    local -A processed
 
     # set uuid of root property
     # and set as processed
