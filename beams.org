@@ -2290,8 +2290,7 @@ value1="value1"
 code() {
     metadir=$(mktemp -d)
     export metadir
-    mkdir -p $metadir/pairs $metadir/props/{tag,date,datum,filesize,filetype,name,rulepath}
-    printf '%s,"%s"' "$uuid1" "$value1" > $metadir/props/datum/index.csv
+    mkdir -p $metadir/pairs $metadir/props/{tag,date,datum,filepath,filesize,filetype,name,rulepath}
     # source functions and redirect the rest to null
     source $script -d "$metadir" -c "$config" &>/dev/null;
 }
@@ -2300,44 +2299,80 @@ test_build-prop_succeeds() {
     code
     assert "build_prop \"\" \"8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704\" \"datum\""
 }
-test_build-prop_prints() {
+test_build-prop_returns_datum() {
     code
-    fake mock << EOF
-value1
+    fake datum_index << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,\"value1\"
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,\"value2\"
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,\"\"
 EOF
-    assert_equals "$(mock)" "$(build_prop "" "8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704" "datum")"
+    datum_index > "$metadir/props/datum/index.csv"
+    assert_equals "value1" "$(build_prop "" "8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704" "datum")"
+}
+test_build-prop_returns_hostdate() {
+    code
+    fake date_index << EOF
+4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d,2001-01-01
+161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc,2002-01-01
+28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10,2003-01-01
+EOF
+    date_index > "$metadir/props/date/index.csv"
+    fake hostdate_pair << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10
+EOF
+    hostdate_pair > "$metadir/pairs/datum-hostdate.csv"
+    assert_equals ":HOST_DATE: <2001-01-01>" "$(build_prop "datum" "8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704" "hostdate")"
 }
 #+end_src
 ** build-node
 #+begin_src sh :tangle tests/test_build-node :tangle-mode (identity #o755)
 script="/Users/fetsorn/mm/0---codes/0-beams/scripts/build-biorg"
 config="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
-uuid1="8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704"
-value1="value1"
 
-code() {
+setup_metadir() {
     metadir=$(mktemp -d)
     export metadir
     mkdir -p $metadir/pairs $metadir/props/{tag,date,datum,filesize,filetype,name,rulepath}
-    printf '%s,"%s"' "$uuid1" "$value1" > $metadir/props/datum/index.csv
+    fake datum_index << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,\"value1\"
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,\"value2\"
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,\"\"
+EOF
+    datum_index > "$metadir/props/datum/index.csv"
+    fake date_index << EOF
+4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d,2001-01-01
+161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc,2002-01-01
+28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10,2003-01-01
+EOF
+    date_index > "$metadir/props/date/index.csv"
+    fake hostdate_pair << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10
+EOF
+    hostdate_pair > "$metadir/pairs/datum-hostdate.csv"
+}
+setup() {
+    setup_metadir
     # source functions and redirect the rest to null
     source $script -d "$metadir" -c "$config" &>/dev/null;
 }
 
 test_build-node_succeeds() {
-    code
-    assert "build_node \"8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704\" \"1\" 2>/dev/null"
+    assert "build_node \"8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704\" &>/dev/null"
 }
-test_build-node_prints() {
-    code
+test_build-node_returns_node() {
     fake mock << EOF
 ,* .
 :PROPERTIES:
 :UUID: 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704
+:HOST_DATE: <2001-01-01>
 :END:
 value1
 EOF
-    assert_equals "$(mock)" "$(build_node "8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704" "1" 2>/dev/null)"
+    assert_equals "$(mock)" "$(build_node "8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704")"
 }
 #+end_src
 ** build-biorg
@@ -2349,32 +2384,56 @@ value1="value1"
 uuid2="0bb6648436e480468413313bce468453d5657fb9f8aa4b6e98c719b83415b0ae"
 value2="value2"
 
-code() {
+setup_metadir() {
     metadir=$(mktemp -d)
     export metadir
     mkdir -p $metadir/pairs $metadir/props/{tag,date,datum,filesize,filetype,name,rulepath}
-    printf '%s,"%s"\n' "$uuid1" "$value1" >> $metadir/props/datum/index.csv
-    printf '%s,"%s"\n' "$uuid2" "$value2" >> $metadir/props/datum/index.csv
+    fake datum_index << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,\"value1\"
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,\"value2\"
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,\"\"
+EOF
+    datum_index > "$metadir/props/datum/index.csv"
+    fake date_index << EOF
+4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d,2001-01-01
+161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc,2002-01-01
+28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10,2003-01-01
+EOF
+    date_index > "$metadir/props/date/index.csv"
+    fake hostdate_pair << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10
+EOF
+    hostdate_pair > "$metadir/pairs/datum-hostdate.csv"
+}
+setup() {
+    setup_metadir
 }
 
 # test_build-biorg_fails_when_no_metadir() {}
 test_build-biorg_succeeds() {
-    code
     assert "bash $script -d $metadir -c $config 2>/dev/null"
 }
-test_build-biorg_prints() {
-    code
+test_build-biorg_returns_nodes() {
     fake mock << EOF
 ,* .
 :PROPERTIES:
 :UUID: 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704
+:HOST_DATE: <2001-01-01>
 :END:
 value1
 ,* .
 :PROPERTIES:
-:UUID: 0bb6648436e480468413313bce468453d5657fb9f8aa4b6e98c719b83415b0ae
+:UUID: b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e
+:HOST_DATE: <2002-01-01>
 :END:
 value2
+,* .
+:PROPERTIES:
+:UUID: f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265
+:HOST_DATE: <2003-01-01>
+:END:
 EOF
     assert_equals "$(mock)" "$(bash $script -d $metadir -c $config 2>/dev/null)"
 }
