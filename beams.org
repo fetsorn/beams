@@ -2364,10 +2364,6 @@ EOF
 #+begin_src sh :tangle tests/test_break-biorg-awk :tangle-mode (identity #o755)
 script="/Users/fetsorn/mm/0---codes/0-beams/scripts/break-biorg.awk"
 config="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
-uuid1="8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704"
-value1="value1"
-uuid2="0bb6648436e480468413313bce468453d5657fb9f8aa4b6e98c719b83415b0ae"
-value2="value2"
 
 setup() {
     biorg=$(mktemp)
@@ -2446,7 +2442,7 @@ test_break-biorg-awk_writes_date_index() {
 EOF
     assert_equals "$(mock)" "$(cat $testdir/props/date/index.csv)"
 }
-test_break-biorg-awk_writes_date_pair() {
+test_break-biorg-awk_writes_hostdate_pair() {
     fake uuidgen _uuidgen
     testdir=$(awk -f $script -v CONFIG=$config $biorg 2>/dev/null)
     fake mock << EOF
@@ -2508,13 +2504,9 @@ EOF
 #+end_src
 
 ** break-biorg
-#+begin_src sh :tangle tests/test_break-biorg-awk :tangle-mode (identity #o755)
+#+begin_src sh :tangle tests/test_break-biorg :tangle-mode (identity #o755)
 script="/Users/fetsorn/mm/0---codes/0-beams/scripts/break-biorg.awk"
 config="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
-uuid1="8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704"
-value1="value1"
-uuid2="0bb6648436e480468413313bce468453d5657fb9f8aa4b6e98c719b83415b0ae"
-value2="value2"
 
 setup() {
     biorg=$(mktemp)
@@ -2557,5 +2549,180 @@ EOF
         fi
     }
     export -f _uuidgen
+}
+#+end_src
+
+** merge
+#+begin_src sh :tangle tests/test_merge :tangle-mode (identity #o755)
+script="/Users/fetsorn/mm/0---codes/0-beams/scripts/merge"
+config="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
+
+setup_main() {
+    maindir=$(mktemp -d)
+    export maindir
+    mkdir -p $maindir/pairs $maindir/props/{tag,date,datum,filepath,filesize,filetype,name,rulepath}
+    fake datum_index << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,\"value1\"
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,\"\"
+EOF
+    datum_index > "$maindir/props/datum/index.csv"
+    fake date_index << EOF
+4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d,2001-01-01
+495ac5d03abc7e2812998371d1c9d8f802f1995fe9ab2135a30578852add5c44,2000-01-01
+EOF
+    date_index > "$maindir/props/date/index.csv"
+    fake hostdate_pair << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,495ac5d03abc7e2812998371d1c9d8f802f1995fe9ab2135a30578852add5c44
+EOF
+    hostdate_pair > "$maindir/pairs/datum-hostdate.csv"
+    fake tag_index << EOF
+2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+EOF
+    tag_index > "$maindir/props/tag/index.csv"
+    fake tag_pair << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+EOF
+    tag_pair > "$maindir/pairs/datum-tag.csv"
+    fake filepath_index << EOF
+01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,\"path/to/1\"
+424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,\"path/to/2\"
+EOF
+    filepath_index > "$maindir/props/filepath/index.csv"
+    fake filepath_pair << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865
+EOF
+    filepath_pair > "$maindir/pairs/datum-filepath.csv"
+    fake filehash_pair << EOF
+01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,7346896c0ac9b7404de14c7402ed06c1892d7429f24c69e8f0f7bcec6440b7ef
+424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,023b9dfa450e761b1a4ffcf9dd34a2fde273d78c5914957dfe39153aaca8a629
+EOF
+    filehash_pair > "$maindir/pairs/filepath-filehash.csv"
+}
+
+setup_new() {
+    newdir=$(mktemp -d)
+    export newdir
+    mkdir -p $newdir/pairs $newdir/props/{tag,date,datum,filepath,filesize,filetype,name,rulepath}
+    fake datum_index << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,\"value1\"
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,\"value2\"
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,\"\"
+EOF
+    datum_index > "$newdir/props/datum/index.csv"
+    fake date_index << EOF
+4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d,2001-01-01
+161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc,2002-01-01
+28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10,2003-01-01
+EOF
+    date_index > "$newdir/props/date/index.csv"
+    fake hostdate_pair << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10
+EOF
+    hostdate_pair > "$newdir/pairs/datum-hostdate.csv"
+    fake tag_index << EOF
+2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+EOF
+    tag_index > "$newdir/props/tag/index.csv"
+    fake tag_pair << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+EOF
+    tag_pair > "$newdir/pairs/datum-tag.csv"
+    fake filepath_index << EOF
+01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,\"path/to/1\"
+424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,\"path/to/2\"
+1e8251d0c0cfed1944735156e09c934976ece0bf6b89f75e0ba16f372ec9aa05,\"path/to/3\"
+EOF
+    filepath_index > "$newdir/props/filepath/index.csv"
+    fake filepath_pair << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,1e8251d0c0cfed1944735156e09c934976ece0bf6b89f75e0ba16f372ec9aa05
+EOF
+    filepath_pair > "$newdir/pairs/datum-filepath.csv"
+    fake filehash_pair << EOF
+01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,7346896c0ac9b7404de14c7402ed06c1892d7429f24c69e8f0f7bcec6440b7ef
+424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,023b9dfa450e761b1a4ffcf9dd34a2fde273d78c5914957dfe39153aaca8a629
+1e8251d0c0cfed1944735156e09c934976ece0bf6b89f75e0ba16f372ec9aa05,530e0adbaf82e521276261947eccf1061294a017dfe7e7cad8fb84a703feafcc
+EOF
+    filehash_pair > "$newdir/pairs/filepath-filehash.csv"
+}
+
+setup() {
+    setup_main
+    setup_new
+}
+
+test_merge_succeeds() {
+    assert "$script $newdir $maindir &>/dev/null"
+}
+test_merge_stderr() {
+    $script $newdir $maindir 2>&1 >/dev/null
+    assert true
+}
+test_merge_datum_index_edits() {
+    updated_value='b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,"value2"'
+    $script $newdir $maindir &>/dev/null
+    assert "grep -o '$updated_value' $maindir/props/datum/index.csv 2>&1"
+}
+test_merge_datum_index_adds() {
+    new_value='f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,""'
+    $script $newdir $maindir &>/dev/null
+    assert "grep -o '$new_value' $maindir/props/datum/index.csv 2>&1"
+}
+test_merge_date_index_edits() {
+    updated_value='161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc,2002-01-01'
+    $script $newdir $maindir &>/dev/null
+    assert "grep -o '$updated_value' $maindir/props/date/index.csv 2>&1"
+}
+test_merge_date_index_adds() {
+    new_value='28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10,2003-01-01'
+    $script $newdir $maindir &>/dev/null
+    assert "grep -o '$new_value' $maindir/props/date/index.csv 2>&1"
+}
+test_merge_hostdate_pair_edits() {
+    updated_value='b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc'
+    $script $newdir $maindir &>/dev/null
+    assert "grep -o '$updated_value' $maindir/pairs/datum-hostdate.csv 2>&1"
+}
+test_merge_hostdate_pair_adds() {
+    new_value='f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10'
+    $script $newdir $maindir &>/dev/null
+    assert "grep -o '$new_value' $maindir/pairs/datum-hostdate.csv 2>&1"
+}
+test_merge_tag_index_does_not_change() {
+
+    fake tag_index << EOF
+2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+EOF
+    $script $newdir $maindir &>/dev/null
+    assert_equals $(tag_index) "$(cat $maindir/props/tag/index.csv)"
+}
+test_merge_tag_pair_adds() {
+    new_value='f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c'
+    $script $newdir $maindir &>/dev/null
+    assert "grep -o '$new_value' $maindir/pairs/datum-tag.csv 2>&1"
+}
+test_merge_filepath_index_adds() {
+    new_value='1e8251d0c0cfed1944735156e09c934976ece0bf6b89f75e0ba16f372ec9aa05,\"path/to/3\"'
+    $script $newdir $maindir &>/dev/null
+    assert "grep -o '$new_value' $maindir/props/filepath/index.csv 2>&1"
+}
+test_merge_filepath_pair_edits() {
+    updated_value='b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,1e8251d0c0cfed1944735156e09c934976ece0bf6b89f75e0ba16f372ec9aa05'
+    $script $newdir $maindir &>/dev/null
+    assert "grep -o '$updated_value' $maindir/pairs/datum-filepath.csv 2>&1"
+}
+test_merge_filehash_pair_adds() {
+    new_value='1e8251d0c0cfed1944735156e09c934976ece0bf6b89f75e0ba16f372ec9aa05,530e0adbaf82e521276261947eccf1061294a017dfe7e7cad8fb84a703feafcc'
+    $script $newdir $maindir &>/dev/null
+    assert "grep -o '$new_value' $maindir/pairs/filepath-filehash.csv 2>&1"
 }
 #+end_src
