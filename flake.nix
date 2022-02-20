@@ -33,44 +33,39 @@
           name = "beams";
           src = ./.;
           buildInputs = [
-            pkgs.ripgrep
             pkgs.coreutils
-            pkgs.parallel
             pkgs.file
+            pkgs.jq
             pkgs.moreutils
+            pkgs.parallel
+            pkgs.ripgrep
           ];
           buildPhase = ''
             mkdir scripts tests
             ${pkgs.emacs}/bin/emacs --batch --eval "(require 'org)" --eval '(org-babel-tangle-file "beams.org")'
           '';
           installPhase = ''
-            # mkdir -p $out/bin/
-            # cp scripts/* $out/bin/
-            # chmod +x $out/bin/*
-            touch $out
+            mkdir -p $out/bin/
+            cp scripts/* $out/bin/
+            chmod +x $out/bin/*
           '';
         };
-        puma =
-          pkgs.writeShellScriptBin "puma" (builtins.readFile "${beams}/puma");
-        lookup = pkgs.writeShellScriptBin "lookup"
-          (builtins.readFile "${beams}/lookup");
       in rec {
         devShell = pkgs.mkShell {
           buildInputs = [
-            beams
-            pkgs.jq
-            pkgs.ripgrep
-            pkgs.coreutils
-            pkgs.parallel
-            pkgs.file
-            pkgs.moreutils
             pkgs.bash_unit
+            pkgs.coreutils
+            pkgs.file
+            pkgs.jq
+            pkgs.moreutils
+            pkgs.parallel
+            pkgs.ripgrep
           ];
         };
         shellHook = ''
           mkdir -p scripts tests
         '';
-        packages = { inherit beams puma lookup; };
+        packages = { inherit beams; };
         defaultPackage = beams;
       });
 }
