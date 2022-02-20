@@ -2240,8 +2240,8 @@ END {
 #+begin_src sh :tangle scripts/init-metadir :tangle-mode (identity #o755)
 mkdir -p metadir/pairs metadir/props/{tag,date,datum,filesize,filetype,name,rulepath}
 #+end_src
-** sync
-#+begin_src sh :tangle scripts/sync :tangle-mode (identity #o755)
+** mdirsync
+#+begin_src sh :tangle scripts/mdirsync :tangle-mode (identity #o755)
 
 usage() {
   printf 1>&2 "%s\n" "Usage: $0 INBOX [-c CONFIG] [-d METADIR]

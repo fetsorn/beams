@@ -35,6 +35,7 @@
           buildInputs = [
             pkgs.coreutils
             pkgs.file
+            pkgs.gawk
             pkgs.jq
             pkgs.moreutils
             pkgs.parallel
@@ -56,6 +57,7 @@
             pkgs.bash_unit
             pkgs.coreutils
             pkgs.file
+            pkgs.gawk
             pkgs.jq
             pkgs.moreutils
             pkgs.parallel
