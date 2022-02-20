@@ -1649,18 +1649,63 @@ printf "%s\n" "$tempout"
 #+begin_src sh :tangle scripts/gc :tangle-mode (identity #o755)
 #!/bin/bash
 
-if [ $# -ne 1 ]; then
-  printf 1>&2 "%s\n" "Usage: $0 METADIR
+usage () {
+  printf 1>&2 "%s\n" "Usage: $0 [-c CONFIG] [-d METADIR]
 
   Deduplicates, sorts,
   and removes garbage from METADIR
 
   EXAMPLE:
-    $0 metadir"
+    $0"
+}
+
+OPTIND=1
+while getopts 'c:d:' opt; do
+  case $opt in
+    c) config="$OPTARG" ;;
+    d) metadir="$OPTARG" ;;
+    ,*) usage
+       exit 1
+  esac
+done
+shift "$(( OPTIND - 1 ))"
+
+# get the path to the folder which contains
+# the index of properties and relations between them
+if [ ! "$metadir" ]; then
+    metadir="$PWD/metadir"
+fi
+
+# check if metadir exists
+if [[ ! -d "$metadir" ]]; then
+  printf 1>&2 "No metadir at %s\n" "$metadir"
   exit 3
 fi
 
-metadir="$1"
+# get the path to the json file which contains
+# the schema of properties and relations between them
+if [ ! "$config" ]; then
+    config="$PWD/metadir.json"
+fi
+
+# check if config exists
+if [[ ! -f "$config" ]]; then
+  printf 1>&2 "No config at %s\n" "$config"
+  exit 3
+fi
+
+# TODO support several roots
+# find a property that doesn't have a parent, treat as root
+# if there are several matching properties, pick the first in alphabetical order
+root=$(jq -r 'map_values(select(has("parent") | not)) | keys[0]' "$config")
+# if there are no matching properties, exit with an error
+if [ ! "$root" ]; then
+  printf 1>&2 "No root property in the config %s\n" "$config"
+  exit 3
+fi
+
+# get the list of all property names as a space-separated string
+config_props=$(jq -r 'keys | join(" ")' "$config")
 
 # usage: gc CSVFILE RGFILE
 # Removes from CSVFILE all keys which are not in RGFILE
@@ -1670,63 +1715,84 @@ _gc () {
 
     printf 1>&2 "gc: %s\n" "$csvfile"
 
-    # _gc freezes on an empty csvfile
-    # probably because grep is blocking on stdin
+    # hangs if csvfile is empty
     if [ -s "$csvfile" ]; then
-        cat "$csvfile" | rg -f <(printf "%s" "$rgpattern") | sort | uniq | sort -t "," -k 2 | sponge "$csvfile"
+        cat "$csvfile" | rg -f <(printf "%s" "$rgpattern") | sort | uniq | sort -t "," -k 2 -k 1 | sponge "$csvfile"
     fi
 }
 
 export -f _gc
 
-# TODO: strip trailing newlines from datum here
-# deduplicate and sort datum props
-_gc "$metadir/props/datum/index.csv" ".*"
+read -r -a props <<< "$config_props"
 
-# remove dead datum pairs
-datum_props=$(cat "$metadir/props/datum/index.csv" | cut -c 1-64)
-_gc "$metadir/pairs/datum-guestdate.csv" "$datum_props"
-_gc "$metadir/pairs/datum-hostdate.csv"  "$datum_props"
-_gc "$metadir/pairs/datum-hostname.csv"  "$datum_props"
-_gc "$metadir/pairs/datum-guestname.csv" "$datum_props"
-_gc "$metadir/pairs/datum-filepath.csv"  "$datum_props"
-_gc "$metadir/pairs/datum-privacy.csv"   "$datum_props"
-_gc "$metadir/pairs/datum-tag.csv"       "$datum_props"
+declare -Ag _
+for prop in "${props[@]}"; do
+    _[$prop,"parent"]=$(jq -r ".$prop.parent" "$config")
+    _[$prop,"type"]=$(jq -r ".$prop.type" "$config")
+    _[$prop,"dir"]=$(jq -r ".$prop.dir" "$config")
+done
 
-# remove garbage filepath props
-filepath_pairs=$(cat "$metadir/pairs/datum-filepath.csv" | cut -c 66- )
-_gc "$metadir/props/filepath/index.csv" "$filepath_pairs"
+declare -A processed
 
-# remove dead filepath pairs
-filepath_props=$(cat "$metadir/props/filepath/index.csv" | cut -c 1-64)
-_gc "$metadir/pairs/filepath-moddate.csv"  "$filepath_props"
-_gc "$metadir/pairs/filepath-filesize.csv" "$filepath_props"
-_gc "$metadir/pairs/filepath-filetype.csv" "$filepath_props"
-_gc "$metadir/pairs/filepath-filehash.csv" "$filepath_props"
+# deduplicate and sort root prop
+root_index="$metadir/props/$root/index.csv"
+if [ -f "$root_index" ]; then
+    _gc "$root_index" ".*"
+fi
+processed["$root"]=1
 
-# remove garbage filesize props
-filesize_pairs=$(cat "$metadir/pairs/filepath-filesize.csv" | cut -c 66-)
-_gc "$metadir/props/filesize/index.csv" "$filesize_pairs"
+while (( ${#props[@]} != 0 )); do
+    # get the last element of queue
+    prop=${props[-1]}
+    # get its parent property
+    parent=${_[$prop,"parent"]}
+    if [ ${processed[$prop]} ] || [ ! "$parent" ]; then
+        # if processed or has no parent
+        # remove from queue
+        unset -v 'props[-1]'
+    elif [ ${processed[$parent]} ]; then
 
-# remove garbage filetype props
-filetype_pairs=$(cat "$metadir/pairs/filepath-filetype.csv" | cut -c 66-)
-_gc "$metadir/props/filetype/index.csv" "$filetype_pairs"
+        parent_props="$metadir/props/$parent/index.csv"
+        if [ -f "$parent_props" ]; then
+            parent_uuids=$(cat "$parent_props" | cut -c 1-64)
 
-# remove garbage date props
-date_pairs=$(cat "$metadir/pairs/datum-hostdate.csv" "$metadir/pairs/datum-guestdate.csv" "$metadir/pairs/filepath-moddate.csv" | cut -c 66-)
-_gc "$metadir/props/date/index.csv" "$date_pairs"
+            prop_pair="$metadir/pairs/$parent-$prop.csv"
+            if [ -f "$prop_pair" ]; then
+                _gc "$prop_pair" "$parent_uuids"
+            fi
+        fi
 
-# remove garbage name props
-name_pairs=$(cat "$metadir/pairs/datum-hostname.csv" "$metadir/pairs/datum-guestname.csv" | cut -c 66-)
-_gc "$metadir/props/name/index.csv" "$name_pairs"
+        prop_type=$(jq -r ".$prop.type" "$config")
+        if [ "$prop_type" != "hash" ]; then
 
-# remove garbage privacy props
-privacy_pairs=$(cat "$metadir/pairs/datum-privacy.csv" | cut -c 66-)
-_gc "$metadir/props/privacy/index.csv" "$privacy_pairs"
+            parent_pair="$metadir/pairs/$parent-$prop.csv"
+            if [ -f "$parent_pair" ]; then
+                prop_uuids=$(cat "$parent_pair" | cut -c 66-)
 
-# remove garbage tag props
-tag_pairs=$(cat "$metadir/pairs/datum-tag.csv" | cut -c 66-)
-_gc "$metadir/props/tag/index.csv" "$tag_pairs"
+                prop_dir=$(jq -r ".$prop.dir" "$config")
+                if [ ! "$prop_dir" ] || [ "$prop_dir" == "null" ]; then
+                    prop_dir="$prop"
+                fi
+
+                prop_index="$metadir/props/$prop_dir/index.csv"
+                if [ -f "$prop_index" ]; then
+                    _gc "$prop_index" "$prop_uuids"
+                fi
+            fi
+
+        fi
+        processed["$prop"]=1
+        # remove from queue
+        unset -v 'props[-1]'
+    else
+        # remove from queue
+        unset -v 'props[-1]'
+        # if parent has not been processed
+        # add itself and parent to queue
+        props=( "${props[@]}" "$prop" "$parent" )
+    fi
+done
+
 #+end_src
 ** merge
 #+begin_src sh :tangle scripts/merge :tangle-mode (identity #o755)
@@ -3040,10 +3106,10 @@ test_merge_filehash_pair_adds() {
 }
 #+end_src
 
-** sync
+** mdirsync
 #+begin_src sh :tangle tests/test_sync :tangle-mode (identity #o755)
 config="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
-script="/Users/fetsorn/mm/0---codes/0-beams/scripts/sync"
+script="/Users/fetsorn/mm/0---codes/0-beams/scripts/mdirsync"
 
 setup_old() {
     old=$(mktemp)
@@ -3199,10 +3265,10 @@ test_sync_syncs_uuids() {
 # test_sync_syncs_cyrillics() {}
 #+end_src
 
-** sync-parallel
+** mdirsync-parallel
 #+begin_src sh
 config="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
-script="/Users/fetsorn/mm/0---codes/0-beams/scripts/sync"
+script="/Users/fetsorn/mm/0---codes/0-beams/scripts/mdirsync"
 
 setup_old() {
     old=$(mktemp)
@@ -3358,4 +3424,134 @@ test_sync_syncs_uuids() {
     assert_equals "$(cat $new)" "$(cat $old)"
 }
 # test_sync_syncs_cyrillics() {}
+#+end_src
+
+** gc
+#+begin_src sh :tangle tests/test_gc :tangle-mode (identity #o755)
+script="/Users/fetsorn/mm/0---codes/0-beams/scripts/gc"
+config="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
+
+setup_old() {
+    olddir=$(mktemp -d)
+    export olddir
+    mkdir -p $olddir/pairs $olddir/props/{tag,date,datum,filepath,filesize,filetype,name,rulepath}
+    fake datum_index << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,\"value1\"
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,\"\"
+EOF
+    datum_index > "$olddir/props/datum/index.csv"
+    fake date_index << EOF
+4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d,2001-01-01
+161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc,2002-01-01
+28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10,2003-01-01
+EOF
+    date_index > "$olddir/props/date/index.csv"
+    fake hostdate_pair << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10
+EOF
+    hostdate_pair > "$olddir/pairs/datum-hostdate.csv"
+    fake tag_index << EOF
+2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+EOF
+    tag_index > "$olddir/props/tag/index.csv"
+    fake tag_pair << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+EOF
+    tag_pair > "$olddir/pairs/datum-tag.csv"
+    fake filepath_index << EOF
+01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,\"path/to/1\"
+424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,\"path/to/2\"
+1e8251d0c0cfed1944735156e09c934976ece0bf6b89f75e0ba16f372ec9aa05,\"path/to/3\"
+EOF
+    filepath_index > "$olddir/props/filepath/index.csv"
+    fake filepath_pair << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,1e8251d0c0cfed1944735156e09c934976ece0bf6b89f75e0ba16f372ec9aa05
+EOF
+    filepath_pair > "$olddir/pairs/datum-filepath.csv"
+    fake filehash_pair << EOF
+01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,7346896c0ac9b7404de14c7402ed06c1892d7429f24c69e8f0f7bcec6440b7ef
+424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,023b9dfa450e761b1a4ffcf9dd34a2fde273d78c5914957dfe39153aaca8a629
+1e8251d0c0cfed1944735156e09c934976ece0bf6b89f75e0ba16f372ec9aa05,530e0adbaf82e521276261947eccf1061294a017dfe7e7cad8fb84a703feafcc
+EOF
+    filehash_pair > "$olddir/pairs/filepath-filehash.csv"
+}
+
+setup_new() {
+    newdir=$(mktemp -d)
+    export newdir
+    mkdir -p $newdir/pairs $newdir/props/{tag,date,datum,filepath,filesize,filetype,name,rulepath}
+    fake datum_index << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,\"value1\"
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,\"\"
+EOF
+    datum_index > "$newdir/props/datum/index.csv"
+    fake date_index << EOF
+4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d,2001-01-01
+28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10,2003-01-01
+EOF
+    date_index > "$newdir/props/date/index.csv"
+    fake hostdate_pair << EOF
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d
+EOF
+    hostdate_pair > "$newdir/pairs/datum-hostdate.csv"
+    fake tag_index << EOF
+2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+EOF
+    tag_index > "$newdir/props/tag/index.csv"
+    fake tag_pair << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+EOF
+    tag_pair > "$newdir/pairs/datum-tag.csv"
+    fake filepath_index << EOF
+01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,\"path/to/1\"
+EOF
+    filepath_index > "$newdir/props/filepath/index.csv"
+    fake filepath_pair << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee
+EOF
+    filepath_pair > "$newdir/pairs/datum-filepath.csv"
+    fake filehash_pair << EOF
+01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,7346896c0ac9b7404de14c7402ed06c1892d7429f24c69e8f0f7bcec6440b7ef
+424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,023b9dfa450e761b1a4ffcf9dd34a2fde273d78c5914957dfe39153aaca8a629
+EOF
+    filehash_pair > "$newdir/pairs/filepath-filehash.csv"
+}
+
+setup() {
+    setup_old
+    setup_new
+}
+
+test_gc_succeeds() {
+    assert "bash $script -c $config -d $olddir &>/dev/null"
+}
+test_gc_stderr() {
+    bash $script -c $config -d $olddir 2>&1 >/dev/null
+    assert true
+}
+test_gc_removes_hostdate_pair() {
+    bash $script -c $config -d $olddir &>/dev/null
+    assert_equals "$(cat $newdir/pairs/datum-hostdate.csv)" "$(cat $olddir/pairs/datum-hostdate.csv)"
+}
+test_gc_removes_hostdate_index() {
+    bash $script -c $config -d $olddir &>/dev/null
+    assert_equals "$(cat $newdir/props/date/index.csv)" "$(cat $olddir/props/date/index.csv)"
+}
+test_gc_removes_filepath_pair() {
+    bash $script -c $config -d $olddir &>/dev/null
+    assert_equals "$(cat $newdir/pairs/datum-filepath.csv)" "$(cat $olddir/pairs/datum-filepath.csv)"
+}
+test_gc_removes_filepath_index() {
+    bash $script -c $config -d $olddir &>/dev/null
+    assert_equals "$(cat $newdir/props/filepath/index.csv)" "$(cat $olddir/props/filepath/index.csv)"
+}
 #+end_src
