@@ -213,10 +213,6 @@ for prop in "${props[@]}"; do
     _[$prop,"label"]=$(jq -r ".$prop.label" "$config")
     _[$prop,"type"]=$(jq -r ".$prop.type" "$config")
     _[$prop,"dir"]=$(jq -r ".$prop.dir" "$config")
-    # _parent[$prop]=$(jq -r ".$prop.parent" "$config")
-    # _label[$prop]=$(jq -r ".$prop.label" "$config")
-    # _type[$prop]=$(jq -r ".$prop.type" "$config")
-    # _dir[$prop]=$(jq -r ".$prop.dir" "$config")
 done
 unset props
 
@@ -1534,24 +1530,73 @@ function __parse_object(path, sep, i, raw_value, key, colon, value, raw_key) {
 ** break-biorg
 #+begin_src sh :tangle scripts/break-biorg :tangle-mode (identity #o755)
 #!/bin/bash
+usage () {
+    printf 1>&2 "%s\n" "Usage: $0 [-c CONFIG] BIORG
 
-# list of jsons | break-json | path to a temporary metadir
+    Breaks down BIORG,
+    outputs path to a temporary metadir
 
-if [ $# -ne 0 ] || [[ -t 0 ]]; then
-    printf 1>&2 "%s\n" "Usage: $0
-
-    Reads a list of json elements from stdin
-    breaks each, outputs path to a temporary metadir
+  OPTIONS:
+  -c json file which contains the schema of properties and relations between them
+     defaults to \$PWD/metadir.json
 
     EXAMPLE:
       cat cache.json | $0"
+}
+
+OPTIND=1
+while getopts 'c:' opt; do
+  case $opt in
+    c) config="$OPTARG" ;;
+    ,*) usage
+       exit 1
+  esac
+done
+shift "$(( OPTIND - 1 ))"
+
+if [ $# -ne 1 ]; then
+    usage
     exit 3
 fi
 
-break_biorg () {
-    counter="$1"
+biorg="$1"
 
-    temp=$(awk -f scripts/break-biorg.awk <&0)
+# get the path to the json file which contains
+# the schema of properties and relations between them
+if [ ! "$config" ]; then
+    config="$PWD/metadir.json"
+fi
+
+# check if config exists
+if [[ ! -f "$config" ]]; then
+  printf 1>&2 "No config at %s\n" "$config"
+  exit 3
+fi
+
+# locate other scripts
+SCRIPTS="${BASH_SOURCE%/*}"
+if [[ ! -d "$SCRIPTS" ]]; then SCRIPTS="$PWD"; fi
+
+# TODO support several roots
+# find a property that doesn't have a parent, treat as root
+# if there are several matching properties, pick the first in alphabetical order
+root=$(jq -r 'map_values(select(has("parent") | not)) | keys[0]' "$config")
+# if there are no matching properties, exit with an error
+if [ ! "$root" ]; then
+  printf 1>&2 "No root property in the config %s\n" "$config"
+  exit 3
+fi
+
+# get the list of all property names as a space-separated string
+config_props=$(jq -r 'keys | join(" ")' "$config")
+
+break_biorg () {
+    local config="$1"
+    local scripts="$2"
+    local counter="$3"
+
+    local temp
+    temp=$(awk -f "$scripts/break-biorg.awk" -v CONFIG="$config" <&0)
     printf "%s\n" "$temp"
 
     printf 1>&2 "     break: %s parts - %s\r" "$counter" "$temp"
@@ -1559,44 +1604,41 @@ break_biorg () {
 
 export -f break_biorg
 
-input=$(mktemp)
-cat <&0 > "$input"
-
-tempins=$(parallel -a "$input" --pipe-part --recstart "* .\n" --recend "\n" break_biorg {} "{#}")
+tempins=$(parallel -a "$biorg" --pipe-part --recstart "* .\n" --recend "\n" break_biorg  "$config" "$SCRIPTS" "{#}")
 printf 1>&2 "\n"
 
 tempout=$(mktemp -d)
 
-mkdir -p "$tempout/props/filepath" \
-         "$tempout/props/filetype" \
-         "$tempout/props/filesize" \
-         "$tempout/props/date" \
-         "$tempout/props/datum" \
-         "$tempout/props/name" \
-         "$tempout/props/privacy" \
-         "$tempout/props/tag" \
-         "$tempout/pairs"
-
-# suppress stderr in case no directory is found in tempins
-sed 's/$/\/props\/filepath\/index.csv/'   <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/props/filepath/index.csv"
-sed 's/$/\/props\/filesize\/index.csv/'   <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/props/filesize/index.csv"
-sed 's/$/\/props\/filetype\/index.csv/'   <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/props/filetype/index.csv"
-sed 's/$/\/props\/date\/index.csv/'       <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/props/date/index.csv"
-sed 's/$/\/props\/datum\/index.csv/'      <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/props/datum/index.csv"
-sed 's/$/\/props\/name\/index.csv/'       <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/props/name/index.csv"
-sed 's/$/\/props\/privacy\/index.csv/'    <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/props/privacy/index.csv"
-sed 's/$/\/props\/tag\/index.csv/'        <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/props/tag/index.csv"
-sed 's/$/\/pairs\/filepath-filesize.csv/' <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/filepath-filesize.csv"
-sed 's/$/\/pairs\/filepath-filetype.csv/' <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/filepath-filetype.csv"
-sed 's/$/\/pairs\/filepath-moddate.csv/'  <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/filepath-moddate.csv"
-sed 's/$/\/pairs\/filepath-filehash.csv/' <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/filepath-filehash.csv"
-sed 's/$/\/pairs\/datum-filepath.csv/'    <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/datum-filepath.csv"
-sed 's/$/\/pairs\/datum-hostname.csv/'    <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/datum-hostname.csv"
-sed 's/$/\/pairs\/datum-hostdate.csv/'    <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/datum-hostdate.csv"
-sed 's/$/\/pairs\/datum-guestname.csv/'   <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/datum-guestname.csv"
-sed 's/$/\/pairs\/datum-guestdate.csv/'   <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/datum-guestdate.csv"
-sed 's/$/\/pairs\/datum-privacy.csv/'     <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/datum-privacy.csv"
-sed 's/$/\/pairs\/datum-tag.csv/'         <<< "$tempins" | xargs cat 2> /dev/null | sort | uniq > "$tempout/pairs/datum-tag.csv"
+read -r -a props <<< "$config_props"
+mkdir -p "$tempout/pairs"
+for prop in "${props[@]}"; do
+    prop_type=$(jq -r ".$prop.type" "$config")
+    # hash has no index
+    if [ "$prop_type" != "hash" ]; then
+        prop_dir=$(jq -r ".$prop.dir" "$config")
+        if [ ! "$prop_dir" ] || [ "$prop_dir" == "null" ]; then
+            prop_dir="$prop"
+        fi
+        # skip if directory was already created and processed
+        if [ ! -d "$tempout/props/$prop_dir" ]; then
+            mkdir -p "$tempout/props/$prop_dir"
+            while read -r tempin; do
+                # suppress stderr in case file is not found in tempin
+                sed "s/$/\/props\/$prop_dir\/index.csv/" <<< "$tempin" | xargs cat 2> /dev/null | sort | uniq >> "$tempout/props/$prop_dir/index.csv"
+            done <<< "$tempins"
+        fi
+    fi
+    # TODO support recursive root
+    # root has no pair
+    if [ "$prop" != "$root" ]; then
+        parent=$(jq -r ".$prop.parent" "$config")
+        # update pair
+        while read -r tempin; do
+            # suppress stderr in case file is not found in tempin
+            sed "s/$/\/pairs\/$parent-$prop.csv/" <<< "$tempin" | xargs cat 2> /dev/null | sort | uniq >> "$tempout/pairs/$parent-$prop.csv"
+        done <<< "$tempins"
+    fi
+done
 
 xargs rm -r <<< "$tempins"
 
@@ -1755,13 +1797,13 @@ update_file () {
         # cmd > mktemp and then <(cat | cmd) replaces <(printf $(cmd) | cmd)
         # to fix an inconsistent bug that corrupts multibyte characters
         changed_uuids=$(mktemp)
-        cat "$new/$csvpath" | cut -c 1-64 > "$changed_uuids"
+        cat "$new/$csvpath" 2>/dev/null | cut -c 1-64 > "$changed_uuids"
         # use grep because ripgrep bugs out on an empty pattern file
         # https://github.com/BurntSushi/ripgrep/issues/1332
         unchanged_lines=$(mktemp)
-        cat "$main/$csvpath" | grep -vf "$changed_uuids" > "$unchanged_lines"
+        cat "$main/$csvpath" 2>/dev/null | grep -vf "$changed_uuids" > "$unchanged_lines"
         # remove empty newline in case unchanged_lines is empty
-        cat "$unchanged_lines" <(cat "$new/$csvpath" | sort | uniq) | sed '/^$/d' > "$main/$csvpath"
+        cat "$unchanged_lines" <(cat "$new/$csvpath" | sort | uniq) 2>/dev/null | sed '/^$/d' > "$main/$csvpath"
     else
         # printf 1>&2 "skip %s\n" "$csvpath"
         :
@@ -2261,7 +2303,8 @@ SCRIPTS="${BASH_SOURCE%/*}"
 if [[ ! -d "$SCRIPTS" ]]; then SCRIPTS="$PWD"; fi
 
 # break biorg
-new=$(cat "$inbox" | awk -f $SCRIPTS/break-biorg.awk -v CONFIG="$config")
+# new=$(cat "$inbox" | awk -f $SCRIPTS/break-biorg.awk -v CONFIG="$config")
+new=$($SCRIPTS/break-biorg -c "$config" "$inbox")
 printf 2>&1 "%s\n" "$new"
 # merge metadir
 bash $SCRIPTS/merge -c "$config" "$new" "$metadir"
@@ -2679,7 +2722,7 @@ EOF
 
 ** break-biorg
 #+begin_src sh :tangle tests/test_break-biorg :tangle-mode (identity #o755)
-script="/Users/fetsorn/mm/0---codes/0-beams/scripts/break-biorg.awk"
+script="/Users/fetsorn/mm/0---codes/0-beams/scripts/break-biorg"
 config="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
 
 setup() {
@@ -2711,18 +2754,112 @@ value2
 EOF
     biorg >> $biorg
 
-    printf "0" > "/tmp/counter"
     _uuidgen() {
-        if [ $(cat "/tmp/counter") == "0" ]; then
-            printf "1A73DBDA-85E0-404A-9104-735602EF5F74\n"
+        case "$PARALLEL_SEQ" in
+            1) printf "1A73DBDA-85E0-404A-9104-735602EF5F74\n" ;;
             # b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e
-            printf "1" > "/tmp/counter"
-        else
-            printf "3C128750-4D98-4A28-AFCD-0BDDAA77C632\n"
+            2) printf "3C128750-4D98-4A28-AFCD-0BDDAA77C632\n" ;;
             # f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265
-        fi
+            3) printf "8A896B3F-BC9D-4CBD-8F45-2C7F2BB5E2CF\n" ;;
+            # cf65e28e5f1b0e0fd7b82a12000cf8792366d4a0a8efcf891b26b5493ec36312
+            *) printf "5C23902C-CD54-4357-9932-79EBDFF86911\n" ;;
+            # 870468c739be1e31ce0861cbde0f2144a0e2b5ff046556aadcaf7f991c01905a
+        esac
     }
     export -f _uuidgen
+}
+test_break-biorg_succeeds() {
+    assert "$script -c $config $biorg &>/dev/null"
+}
+test_break-biorg_prints() {
+    testdir=$(mktemp -d)
+    fake mktemp <<< "$testdir"
+    assert_equals "$testdir" "$($script -c $config $biorg 2>/dev/null)"
+}
+test_break-biorg_stderr() {
+    $script -c $config $biorg 2>&1 >/dev/null
+    assert true
+}
+test_break-biorg_fails_without_config() {
+    assert_fails "$script $biorg 2>/dev/null"
+}
+test_break-biorg_writes_datum_index() {
+    fake uuidgen _uuidgen
+    testdir=$($script -c $config $biorg 2>/dev/null)
+    fake mock << EOF
+cf65e28e5f1b0e0fd7b82a12000cf8792366d4a0a8efcf891b26b5493ec36312,\"\"
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,\"value1\"
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,\"value2\"
+EOF
+    assert_equals "$(mock)" "$(cat $testdir/props/datum/index.csv | sort -t "," -k 2 -k 1)"
+}
+test_break-biorg_writes_date_index() {
+    testdir=$($script -c $config $biorg 2>/dev/null)
+    fake mock << EOF
+4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d,2001-01-01
+161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc,2002-01-01
+28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10,2003-01-01
+EOF
+    assert_equals "$(mock)" "$(cat $testdir/props/date/index.csv | sort -t "," -k 2 -k 1)"
+}
+test_break-biorg_writes_hostdate_pair() {
+    fake uuidgen _uuidgen
+    testdir=$($script -c $config $biorg 2>/dev/null)
+    fake mock << EOF
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc
+cf65e28e5f1b0e0fd7b82a12000cf8792366d4a0a8efcf891b26b5493ec36312,28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d
+EOF
+    assert_equals "$(mock)" "$(cat $testdir/pairs/datum-hostdate.csv | sort -t "," -k 2 -k 1)"
+}
+test_break-biorg_writes_tag_index() {
+    testdir=$($script -c $config $biorg 2>/dev/null)
+    fake mock << EOF
+2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+EOF
+    assert_equals "$(mock)" "$(cat $testdir/props/tag/index.csv | sort -t "," -k 2 -k 1)"
+}
+test_break-biorg_writes_tag_pair() {
+    fake uuidgen _uuidgen
+    testdir=$($script -c $config $biorg 2>/dev/null)
+    fake mock << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+cf65e28e5f1b0e0fd7b82a12000cf8792366d4a0a8efcf891b26b5493ec36312,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+EOF
+    assert_equals "$(mock)" "$(cat $testdir/pairs/datum-tag.csv | sort -t "," -k 2 -k 1)"
+}
+test_break-biorg_does_not_write_filehash_index() {
+    testdir=$($script -c $config $biorg)
+    assert_fail "test -d $testdir/props/filehash"
+}
+test_break-biorg_writes_filehash_pair() {
+    fake uuidgen _uuidgen
+    testdir=$($script -c $config $biorg 2>/dev/null)
+    fake mock << EOF
+424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,023b9dfa450e761b1a4ffcf9dd34a2fde273d78c5914957dfe39153aaca8a629
+01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,7346896c0ac9b7404de14c7402ed06c1892d7429f24c69e8f0f7bcec6440b7ef
+EOF
+    assert_equals "$(mock)" "$(cat $testdir/pairs/filepath-filehash.csv | sort -t "," -k 2 -k 1)"
+}
+test_break-biorg_writes_filepath_index() {
+    testdir=$($script -c $config $biorg 2>/dev/null)
+    fake mock << EOF
+01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,\"path/to/1\"
+424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,\"path/to/2\"
+EOF
+    assert_equals "$(mock)" "$(cat $testdir/props/filepath/index.csv | sort -t "," -k 2 -k 1)"
+}
+test_break-biorg_writes_filepath_pair() {
+    fake uuidgen _uuidgen
+    testdir=$($script -c $config $biorg 2>/dev/null)
+    fake mock << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865
+EOF
+    assert_equals "$(mock)" "$(cat $testdir/pairs/datum-filepath.csv | sort -t "," -k 2 -k 1)"
 }
 #+end_src
 
@@ -2941,28 +3078,29 @@ setup_new() {
     fake new << EOF
 ,* .
 :PROPERTIES:
+:UUID: cf65e28e5f1b0e0fd7b82a12000cf8792366d4a0a8efcf891b26b5493ec36312
+:TAG: tag
+:HOST_DATE: <2003-01-01>
+:END:
+
+,* .
+:PROPERTIES:
 :UUID: 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704
 :TAG: tag
 :HOST_DATE: <2001-01-01>
-:FILE_PATH: "path/to/1"
+:FILE_PATH: path/to/1
 :FILE_HASH: 7346896c0ac9b7404de14c7402ed06c1892d7429f24c69e8f0f7bcec6440b7ef
 :END:
 value1
 ,* .
 :PROPERTIES:
-:UUID: b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e
+:UUID: f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265
 :TAG: tag
 :HOST_DATE: <2002-01-01>
-:FILE_PATH: "path/to/2"
+:FILE_PATH: path/to/2
 :FILE_HASH: 023b9dfa450e761b1a4ffcf9dd34a2fde273d78c5914957dfe39153aaca8a629
 :END:
 value2
-,* .
-:PROPERTIES:
-:UUID: f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265
-:TAG: tag
-:HOST_DATE: <2003-01-01>
-:END:
 EOF
     new >> $new
 }
@@ -2975,16 +3113,17 @@ setup() {
     setup_old
     setup_new
 
-    printf "0" > "/tmp/counter"
     _uuidgen() {
-        if [ $(cat "/tmp/counter") == "0" ]; then
-            printf "1A73DBDA-85E0-404A-9104-735602EF5F74\n"
+        case "$PARALLEL_SEQ" in
+            1) printf "1A73DBDA-85E0-404A-9104-735602EF5F74\n" ;;
             # b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e
-            printf "1" > "/tmp/counter"
-        else
-            printf "3C128750-4D98-4A28-AFCD-0BDDAA77C632\n"
+            2) printf "3C128750-4D98-4A28-AFCD-0BDDAA77C632\n" ;;
             # f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265
-        fi
+            3) printf "8A896B3F-BC9D-4CBD-8F45-2C7F2BB5E2CF\n" ;;
+            # cf65e28e5f1b0e0fd7b82a12000cf8792366d4a0a8efcf891b26b5493ec36312
+            *) printf "5C23902C-CD54-4357-9932-79EBDFF86911\n" ;;
+            # 870468c739be1e31ce0861cbde0f2144a0e2b5ff046556aadcaf7f991c01905a
+        esac
     }
     export -f _uuidgen
 }
@@ -2999,31 +3138,31 @@ test_sync_populates_datum_index() {
     fake uuidgen _uuidgen
     $script -c $config -d $metadir $old &>/dev/null
     fake datum_index << EOF
+cf65e28e5f1b0e0fd7b82a12000cf8792366d4a0a8efcf891b26b5493ec36312,\"\"
 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,\"value1\"
-b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,\"value2\"
-f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,\"\"
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,\"value2\"
 EOF
-    assert_equals "$(datum_index)" "$(cat $metadir/props/datum/index.csv)"
+    assert_equals "$(datum_index)" "$(cat $metadir/props/datum/index.csv | sort -t "," -k 2 -k 1)"
 }
 test_sync_populates_date_index() {
     fake uuidgen _uuidgen
     $script -c $config -d $metadir $old &>/dev/null
     fake datum_index << EOF
+4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d,2001-01-01
 161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc,2002-01-01
 28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10,2003-01-01
-4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d,2001-01-01
 EOF
-    assert_equals "$(datum_index)" "$(cat $metadir/props/date/index.csv)"
+    assert_equals "$(datum_index)" "$(cat $metadir/props/date/index.csv | sort -t "," -k 2 -k 1)"
 }
 test_sync_populates_hostdate_pair() {
     fake uuidgen _uuidgen
     $script -c $config -d $metadir $old &>/dev/null
     fake datum_index << EOF
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc
+cf65e28e5f1b0e0fd7b82a12000cf8792366d4a0a8efcf891b26b5493ec36312,28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10
 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d
-b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc
-f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10
 EOF
-    assert_equals "$(datum_index)" "$(cat $metadir/pairs/datum-hostdate.csv)"
+    assert_equals "$(datum_index)" "$(cat $metadir/pairs/datum-hostdate.csv | sort -t "," -k 2 -k 1)"
 }
 test_sync_populates_filepath_index() {
     fake uuidgen _uuidgen
@@ -3032,25 +3171,25 @@ test_sync_populates_filepath_index() {
 01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,\"path/to/1\"
 424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,\"path/to/2\"
 EOF
-    assert_equals "$(datum_index)" "$(cat $metadir/props/filepath/index.csv)"
+    assert_equals "$(datum_index)" "$(cat $metadir/props/filepath/index.csv | sort -t "," -k 2 -k 1)"
 }
 test_sync_populates_filepath_pair() {
     fake uuidgen _uuidgen
     $script -c $config -d $metadir $old &>/dev/null
     fake datum_index << EOF
 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee
-b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865
 EOF
-    assert_equals "$(datum_index)" "$(cat $metadir/pairs/datum-filepath.csv)"
+    assert_equals "$(datum_index)" "$(cat $metadir/pairs/datum-filepath.csv | sort -t "," -k 2 -k 1)"
 }
 test_sync_populates_filehash_pair() {
     fake uuidgen _uuidgen
     $script -c $config -d $metadir $old &>/dev/null
     fake datum_index << EOF
-01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,7346896c0ac9b7404de14c7402ed06c1892d7429f24c69e8f0f7bcec6440b7ef
 424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,023b9dfa450e761b1a4ffcf9dd34a2fde273d78c5914957dfe39153aaca8a629
+01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,7346896c0ac9b7404de14c7402ed06c1892d7429f24c69e8f0f7bcec6440b7ef
 EOF
-    assert_equals "$(datum_index)" "$(cat $metadir/pairs/filepath-filehash.csv)"
+    assert_equals "$(datum_index)" "$(cat $metadir/pairs/filepath-filehash.csv | sort -t "," -k 2 -k 1)"
 }
 test_sync_syncs_uuids() {
     fake uuidgen _uuidgen
