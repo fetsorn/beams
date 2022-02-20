@@ -1528,6 +1528,7 @@ function __parse_object(path, sep, i, raw_value, key, colon, value, raw_key) {
 }
 #+end_src
 ** break-biorg
+could be faster than serial break-biorg.awk, but isn't
 #+begin_src sh :tangle scripts/break-biorg :tangle-mode (identity #o755)
 #!/bin/bash
 usage () {
@@ -2303,8 +2304,7 @@ SCRIPTS="${BASH_SOURCE%/*}"
 if [[ ! -d "$SCRIPTS" ]]; then SCRIPTS="$PWD"; fi
 
 # break biorg
-# new=$(cat "$inbox" | awk -f $SCRIPTS/break-biorg.awk -v CONFIG="$config")
-new=$($SCRIPTS/break-biorg -c "$config" "$inbox")
+new=$(cat "$inbox" | awk -f $SCRIPTS/break-biorg.awk -v CONFIG="$config")
 printf 2>&1 "%s\n" "$new"
 # merge metadir
 bash $SCRIPTS/merge -c "$config" "$new" "$metadir"
@@ -3040,6 +3040,165 @@ test_merge_filehash_pair_adds() {
 
 ** sync
 #+begin_src sh :tangle tests/test_sync :tangle-mode (identity #o755)
+config="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
+script="/Users/fetsorn/mm/0---codes/0-beams/scripts/sync"
+
+setup_old() {
+    old=$(mktemp)
+    export old
+    fake old << EOF
+,* .
+:PROPERTIES:
+:UUID: 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704
+:HOST_DATE: <2001-01-01>
+:FILE_PATH: "path/to/1"
+:FILE_HASH: 7346896c0ac9b7404de14c7402ed06c1892d7429f24c69e8f0f7bcec6440b7ef
+:TAG: tag
+:END:
+value1
+,* .
+:PROPERTIES:
+:HOST_DATE: <2002-01-01>
+:FILE_PATH: "path/to/2"
+:FILE_HASH: 023b9dfa450e761b1a4ffcf9dd34a2fde273d78c5914957dfe39153aaca8a629
+:TAG: tag
+:END:
+value2
+,* .
+:PROPERTIES:
+:HOST_DATE: <2003-01-01>
+:TAG: tag
+:END:
+EOF
+    old >> $old
+}
+setup_new() {
+    new=$(mktemp)
+    export new
+    fake new << EOF
+,* .
+:PROPERTIES:
+:UUID: 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704
+:TAG: tag
+:HOST_DATE: <2001-01-01>
+:FILE_PATH: "path/to/1"
+:FILE_HASH: 7346896c0ac9b7404de14c7402ed06c1892d7429f24c69e8f0f7bcec6440b7ef
+:END:
+value1
+,* .
+:PROPERTIES:
+:UUID: b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e
+:TAG: tag
+:HOST_DATE: <2002-01-01>
+:FILE_PATH: "path/to/2"
+:FILE_HASH: 023b9dfa450e761b1a4ffcf9dd34a2fde273d78c5914957dfe39153aaca8a629
+:END:
+value2
+,* .
+:PROPERTIES:
+:UUID: f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265
+:TAG: tag
+:HOST_DATE: <2003-01-01>
+:END:
+EOF
+    new >> $new
+}
+
+setup() {
+    metadir=$(mktemp -d)
+    export metadir
+    mkdir -p $metadir/pairs $metadir/props/{tag,date,datum,filepath,filesize,filetype,name,rulepath}
+
+    setup_old
+    setup_new
+
+    printf "0" > "/tmp/counter"
+    _uuidgen() {
+        if [ $(cat "/tmp/counter") == "0" ]; then
+            printf "1A73DBDA-85E0-404A-9104-735602EF5F74\n"
+            # b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e
+            printf "1" > "/tmp/counter"
+        else
+            printf "3C128750-4D98-4A28-AFCD-0BDDAA77C632\n"
+            # f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265
+        fi
+    }
+    export -f _uuidgen
+}
+test_sync_succeeds() {
+    assert "$script -c $config -d $metadir $old &>/dev/null"
+}
+test_sync_stderr() {
+    $script -c $config -d $metadir $old 2>&1 >/dev/null
+    assert true
+}
+test_sync_populates_datum_index() {
+    fake uuidgen _uuidgen
+    $script -c $config -d $metadir $old &>/dev/null
+    fake datum_index << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,\"value1\"
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,\"value2\"
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,\"\"
+EOF
+    assert_equals "$(datum_index)" "$(cat $metadir/props/datum/index.csv)"
+}
+test_sync_populates_date_index() {
+    fake uuidgen _uuidgen
+    $script -c $config -d $metadir $old &>/dev/null
+    fake datum_index << EOF
+161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc,2002-01-01
+28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10,2003-01-01
+4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d,2001-01-01
+EOF
+    assert_equals "$(datum_index)" "$(cat $metadir/props/date/index.csv)"
+}
+test_sync_populates_hostdate_pair() {
+    fake uuidgen _uuidgen
+    $script -c $config -d $metadir $old &>/dev/null
+    fake datum_index << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,161c6b3d37ba3341b7775b10730b2ded837c3d84d77fb1a046fa198e9db8cbbc
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10
+EOF
+    assert_equals "$(datum_index)" "$(cat $metadir/pairs/datum-hostdate.csv)"
+}
+test_sync_populates_filepath_index() {
+    fake uuidgen _uuidgen
+    $script -c $config -d $metadir $old &>/dev/null
+    fake datum_index << EOF
+01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,\"path/to/1\"
+424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,\"path/to/2\"
+EOF
+    assert_equals "$(datum_index)" "$(cat $metadir/props/filepath/index.csv)"
+}
+test_sync_populates_filepath_pair() {
+    fake uuidgen _uuidgen
+    $script -c $config -d $metadir $old &>/dev/null
+    fake datum_index << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865
+EOF
+    assert_equals "$(datum_index)" "$(cat $metadir/pairs/datum-filepath.csv)"
+}
+test_sync_populates_filehash_pair() {
+    fake uuidgen _uuidgen
+    $script -c $config -d $metadir $old &>/dev/null
+    fake datum_index << EOF
+01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,7346896c0ac9b7404de14c7402ed06c1892d7429f24c69e8f0f7bcec6440b7ef
+424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,023b9dfa450e761b1a4ffcf9dd34a2fde273d78c5914957dfe39153aaca8a629
+EOF
+    assert_equals "$(datum_index)" "$(cat $metadir/pairs/filepath-filehash.csv)"
+}
+test_sync_syncs_uuids() {
+    fake uuidgen _uuidgen
+    $script -c $config -d $metadir $old &>/dev/null
+    assert_equals "$(cat $new)" "$(cat $old)"
+}
+# test_sync_syncs_cyrillics() {}
+#+end_src
+
+** sync-parallel
+#+begin_src sh
 config="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
 script="/Users/fetsorn/mm/0---codes/0-beams/scripts/sync"
 
