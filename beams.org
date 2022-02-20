@@ -2242,6 +2242,7 @@ mkdir -p metadir/pairs metadir/props/{tag,date,datum,filesize,filetype,name,rule
 #+end_src
 ** mdirsync
 #+begin_src sh :tangle scripts/mdirsync :tangle-mode (identity #o755)
+#!/bin/bash
 
 usage() {
   printf 1>&2 "%s\n" "Usage: $0 INBOX [-c CONFIG] [-d METADIR]
