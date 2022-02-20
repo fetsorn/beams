@@ -1804,6 +1804,7 @@ update_file () {
         unchanged_lines=$(mktemp)
         cat "$main/$csvpath" 2>/dev/null | grep -vf "$changed_uuids" > "$unchanged_lines"
         # remove empty newline in case unchanged_lines is empty
+        mkdir -p "$main/$(dirname "$csvpath")"
         cat "$unchanged_lines" <(cat "$new/$csvpath" | sort | uniq) 2>/dev/null | sed '/^$/d' > "$main/$csvpath"
     else
         # printf 1>&2 "skip %s\n" "$csvpath"
@@ -2887,15 +2888,15 @@ EOF
 b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,495ac5d03abc7e2812998371d1c9d8f802f1995fe9ab2135a30578852add5c44
 EOF
     hostdate_pair > "$maindir/pairs/datum-hostdate.csv"
-    fake tag_index << EOF
-2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
-EOF
-    tag_index > "$maindir/props/tag/index.csv"
-    fake tag_pair << EOF
-8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
-b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
-EOF
-    tag_pair > "$maindir/pairs/datum-tag.csv"
+#     fake tag_index << EOF
+# 2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+# EOF
+#     tag_index > "$maindir/props/tag/index.csv"
+#     fake tag_pair << EOF
+# 8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+# b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+# EOF
+    # tag_pair > "$maindir/pairs/datum-tag.csv"
     fake filepath_index << EOF
 01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,\"path/to/1\"
 424bd3271c0c940304ec6e9f4412a422735caeeb9638038bf509e36ae5d4f865,\"path/to/2\"
@@ -3008,7 +3009,7 @@ test_merge_hostdate_pair_adds() {
     $script $newdir $maindir &>/dev/null
     assert "grep -o '$new_value' $maindir/pairs/datum-hostdate.csv 2>&1"
 }
-test_merge_tag_index_does_not_change() {
+test_merge_tag_index_is_created() {
 
     fake tag_index << EOF
 2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
