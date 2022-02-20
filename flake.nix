@@ -32,7 +32,7 @@
         beams = pkgs.stdenv.mkDerivation {
           name = "beams";
           src = ./.;
-          buildInputs = [
+          propagatedBuildInputs = [
             pkgs.coreutils
             pkgs.file
             pkgs.gawk
@@ -64,9 +64,6 @@
             pkgs.ripgrep
           ];
         };
-        shellHook = ''
-          mkdir -p scripts tests
-        '';
         packages = { inherit beams; };
         defaultPackage = beams;
       });
