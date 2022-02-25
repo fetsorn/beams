@@ -1529,7 +1529,7 @@ function __parse_object(path, sep, i, raw_value, key, colon, value, raw_key) {
 #+end_src
 ** break-biorg
 could be faster than serial break-biorg.awk, but isn't
-#+begin_src sh :tangle scripts/break-biorg :tangle-mode (identity #o755)
+#+begin_src sh
 #!/bin/bash
 usage () {
     printf 1>&2 "%s\n" "Usage: $0 [-c CONFIG] BIORG
@@ -1861,17 +1861,24 @@ update_file () {
 
     # printf 1>&2 "update: %s\n" "$csvpath"
     if [ -f "$new/$csvpath" ]; then
+        changed_lines=$(mktemp)
+        if [ -f "$main/$csvpath" ]; then
+            cat "$new/$csvpath" | grep -vf "$main/$csvpath" > "$changed_lines"
+        else
+            cat "$new/$csvpath" > "$changed_lines"
+        fi
         # cmd > mktemp and then <(cat | cmd) replaces <(printf $(cmd) | cmd)
         # to fix an inconsistent bug that corrupts multibyte characters
+        # other times bug is fixed by setting the right locale
         changed_uuids=$(mktemp)
-        cat "$new/$csvpath" 2>/dev/null | cut -c 1-64 > "$changed_uuids"
+        cat "$changed_lines" | cut -c 1-64 > "$changed_uuids"
         # use grep because ripgrep bugs out on an empty pattern file
         # https://github.com/BurntSushi/ripgrep/issues/1332
         unchanged_lines=$(mktemp)
         cat "$main/$csvpath" 2>/dev/null | grep -vf "$changed_uuids" > "$unchanged_lines"
         # remove empty newline in case unchanged_lines is empty
         mkdir -p "$main/$(dirname "$csvpath")"
-        cat "$unchanged_lines" <(cat "$new/$csvpath" | sort | uniq) 2>/dev/null | sed '/^$/d' > "$main/$csvpath"
+        cat "$unchanged_lines" <(cat "$changed_lines" | sort | uniq) 2>/dev/null | sed '/^$/d' > "$main/$csvpath"
     else
         # printf 1>&2 "skip %s\n" "$csvpath"
         :
@@ -2789,7 +2796,7 @@ EOF
 #+end_src
 
 ** break-biorg
-#+begin_src sh :tangle tests/test_break-biorg :tangle-mode (identity #o755)
+#+begin_src sh
 script="/Users/fetsorn/mm/0---codes/0-beams/scripts/break-biorg"
 config="/Users/fetsorn/mm/0---codes/0-beams/tests/config.json"
 
@@ -3034,9 +3041,57 @@ EOF
     filehash_pair > "$newdir/pairs/filepath-filehash.csv"
 }
 
+# a subset of main to test no changes
+setup_same() {
+    samedir=$(mktemp -d)
+    export samedir
+    mkdir -p $samedir/pairs $samedir/props/{tag,date,datum,filepath,filesize,filetype,name,rulepath}
+    fake datum_index << EOF
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,\"value1\"
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,\"\"
+EOF
+    datum_index > "$samedir/props/datum/index.csv"
+    fake date_index << EOF
+28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10,2003-01-01
+4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d,2001-01-01
+EOF
+    date_index > "$samedir/props/date/index.csv"
+    fake hostdate_pair << EOF
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,28a15dd418a2eed8bc7c2133b21bf942182cc58160dfea0c9dd98f155d80ea10
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,4935b73812dd87780ee8deae03d0bbcb125bbcdc05271066ca527ab029e4e79d
+EOF
+    hostdate_pair > "$samedir/pairs/datum-hostdate.csv"
+    fake tag_index << EOF
+2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c,tag
+EOF
+    tag_index > "$samedir/props/tag/index.csv"
+    fake tag_pair << EOF
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,2a1073a6e67f0e5f09a5957c659503c690efe7272be8313df872556a9a684d8c
+EOF
+    tag_pair > "$samedir/pairs/datum-tag.csv"
+    fake filepath_index << EOF
+1e8251d0c0cfed1944735156e09c934976ece0bf6b89f75e0ba16f372ec9aa05,\"path/to/3\"
+01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,\"path/to/1\"
+EOF
+    filepath_index > "$samedir/props/filepath/index.csv"
+    fake filepath_pair << EOF
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,1e8251d0c0cfed1944735156e09c934976ece0bf6b89f75e0ba16f372ec9aa05
+8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee
+EOF
+    filepath_pair > "$samedir/pairs/datum-filepath.csv"
+    fake filehash_pair << EOF
+01f8dafeb2559c983006156763f9c3b951b64688b3b41a9e5ad7cb695110e8ee,7346896c0ac9b7404de14c7402ed06c1892d7429f24c69e8f0f7bcec6440b7ef
+1e8251d0c0cfed1944735156e09c934976ece0bf6b89f75e0ba16f372ec9aa05,530e0adbaf82e521276261947eccf1061294a017dfe7e7cad8fb84a703feafcc
+EOF
+    filehash_pair > "$samedir/pairs/filepath-filehash.csv"
+}
+
 setup() {
     setup_main
     setup_new
+    setup_same
 }
 
 test_merge_succeeds() {
@@ -3103,6 +3158,14 @@ test_merge_filehash_pair_adds() {
     new_value='1e8251d0c0cfed1944735156e09c934976ece0bf6b89f75e0ba16f372ec9aa05,530e0adbaf82e521276261947eccf1061294a017dfe7e7cad8fb84a703feafcc'
     $script $newdir $maindir &>/dev/null
     assert "grep -o '$new_value' $maindir/pairs/filepath-filehash.csv 2>&1"
+}
+test_merge_datum_does_not_change() {
+    value="8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,\"value1\"
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,\"value2\"
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,\"\""
+
+    $script $samedir $newdir &>/dev/null
+    assert_equals "$value" "$(cat $newdir/props/datum/index.csv)"
 }
 #+end_src
 
