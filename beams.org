@@ -1863,9 +1863,9 @@ update_file () {
     if [ -f "$new/$csvpath" ]; then
         changed_lines=$(mktemp)
         if [ -f "$main/$csvpath" ]; then
-            cat "$new/$csvpath" | grep -vf "$main/$csvpath" > "$changed_lines"
+            comm -23 <(cat "$new/$csvpath" | sort | uniq) <(cat "$main/$csvpath" | sort) > "$changed_lines"
         else
-            cat "$new/$csvpath" > "$changed_lines"
+            cp "$new/$csvpath" "$changed_lines"
         fi
         # cmd > mktemp and then <(cat | cmd) replaces <(printf $(cmd) | cmd)
         # to fix an inconsistent bug that corrupts multibyte characters
@@ -3160,6 +3160,14 @@ test_merge_filehash_pair_adds() {
     assert "grep -o '$new_value' $maindir/pairs/filepath-filehash.csv 2>&1"
 }
 test_merge_datum_does_not_change() {
+    value="8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,\"value1\"
+b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,\"value2\"
+f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,\"\""
+
+    $script $samedir $newdir &>/dev/null
+    assert_equals "$value" "$(cat $newdir/props/datum/index.csv)"
+}
+test_merge_date_does_not_change() {
     value="8260502525153a8775ecb052f41e4e908aba4c94b07ef90263fff77195392704,\"value1\"
 b52dc2b8884fc396c108c095da157d8607ee7d61a1e6b4b501b660d42f93c58e,\"value2\"
 f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,\"\""
