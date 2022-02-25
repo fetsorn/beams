@@ -3175,6 +3175,7 @@ f35d45c3ee3e68cf9e36ee10df3edb02104c22b2d47ab17e64114ffb9c208265,\"\""
     $script $samedir $newdir &>/dev/null
     assert_equals "$value" "$(cat $newdir/props/datum/index.csv)"
 }
+# TODO add test for invalid metadir, e.g. when new index has duplicate lines
 #+end_src
 
 ** mdirsync
